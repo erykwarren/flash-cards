@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Flashcards - Learn smarter with spaced repetition">
+  <meta name="theme-color" content="#1a1a2e">
+  
+  <title>Flashcards</title>
+  
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
+  <link rel="apple-touch-icon" href="assets/icon.svg">
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            bg: '#1a1a2e',
+            surface: '#16213e',
+            'surface-hover': '#1f2b47',
+            accent: '#00d4ff',
+            success: '#00ff9d',
+            error: '#ff6b6b',
+            'text-primary': '#e8e8e8',
+            'text-muted': '#8b8b9e',
+            border: '#2a2a4a',
+          },
+          fontFamily: {
+            sans: ['IBM Plex Sans', 'system-ui', 'sans-serif'],
+            heading: ['Outfit', 'system-ui', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  
+  <!-- Custom CSS -->
+  <link rel="stylesheet" href="css/custom.css">
+  
+  <!-- Alpine.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  
+  <!-- Google Identity Services -->
+  <script src="https://accounts.google.com/gsi/client" async defer onload="handleGoogleLoad()"></script>
+</head>
+<body class="bg-bg text-text-primary bg-pattern min-h-screen">
+  
+  <!-- App Container -->
+  <div x-data class="min-h-screen flex flex-col">
+    
+    <!-- Toast Notifications -->
+    <div class="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-full max-w-md px-4">
+      <!-- Error Toast -->
+      <div 
+        x-show="$store.app.error" 
+        x-transition
+        class="toast bg-error/20 border border-error text-error px-4 py-3 rounded-lg mb-2 flex items-center gap-3"
+      >
+        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <span x-text="$store.app.error"></span>
+      </div>
+      
+      <!-- Success Toast -->
+      <div 
+        x-show="$store.app.success" 
+        x-transition
+        class="toast bg-success/20 border border-success text-success px-4 py-3 rounded-lg flex items-center gap-3"
+      >
+        <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <span x-text="$store.app.success"></span>
+      </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div 
+      x-show="$store.app.isLoading" 
+      x-transition
+      class="fixed inset-0 bg-bg/80 backdrop-blur-sm z-40 flex items-center justify-center"
+    >
+      <div class="text-center">
+        <svg class="spinner w-12 h-12 text-accent mx-auto mb-4" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+        </svg>
+        <p class="text-text-muted">Loading...</p>
+      </div>
+    </div>
+
+    <!-- Header -->
+    <header class="bg-surface/50 backdrop-blur-sm border-b border-border sticky top-0 z-30">
+      <div class="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
+        <!-- Logo -->
+        <button @click="$store.app.navigate('home')" class="flex items-center gap-2 hover:opacity-80 transition">
+          <svg class="w-8 h-8 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+          </svg>
+          <span class="font-heading text-xl font-bold">Flashcards</span>
+        </button>
+        
+        <!-- Nav -->
+        <nav class="flex items-center gap-2">
+          <template x-if="$store.app.currentDeck">
+            <button 
+              @click="$store.stats.loadDeckStats($store.app.currentDeck.id); $store.app.navigate('stats')"
+              class="p-2 rounded-lg hover:bg-surface transition"
+              title="Statistics"
+            >
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+              </svg>
+            </button>
+          </template>
+          
+          <button 
+            @click="$store.settings.load(); $store.app.navigate('settings')"
+            class="p-2 rounded-lg hover:bg-surface transition"
+            title="Settings"
+          >
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+            </svg>
+          </button>
+        </nav>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 max-w-4xl mx-auto w-full px-4 py-8">
+      
+      <!-- HOME VIEW -->
+      <template x-if="$store.app.currentView === 'home'">
+        <div class="space-y-8">
+          
+          <!-- Welcome / Current Deck -->
+          <div class="text-center py-8">
+            <template x-if="$store.app.currentDeck">
+              <div>
+                <h1 class="font-heading text-3xl font-bold mb-2" x-text="$store.app.currentDeck.name"></h1>
+                <p class="text-text-muted">
+                  <span x-text="CardStorage.getByDeck($store.app.currentDeck.id).length"></span> cards
+                  <template x-if="$store.app.currentDeck.lastSyncedAt">
+                    <span>
+                      &bull; Last synced <span x-text="new Date($store.app.currentDeck.lastSyncedAt).toLocaleDateString()"></span>
+                    </span>
+                  </template>
+                </p>
+                <template x-if="$store.app.currentDeck.spreadsheetId">
+                  <button 
+                    @click="SyncService.syncDeck($store.app.currentDeck.id).then(r => r.success ? $store.app.showSuccess(r.message) : $store.app.showError(r.message))"
+                    class="mt-2 text-sm text-accent hover:underline inline-flex items-center gap-1"
+                  >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                    Sync Now
+                  </button>
+                </template>
+              </div>
+            </template>
+            
+            <template x-if="!$store.app.currentDeck">
+              <div>
+                <h1 class="font-heading text-3xl font-bold mb-2">Welcome to Flashcards</h1>
+                <p class="text-text-muted">Connect to Google Sheets to get started</p>
+              </div>
+            </template>
+          </div>
+          
+          <!-- Action Buttons -->
+          <div class="flex flex-col sm:flex-row gap-4 justify-center">
+            <template x-if="$store.app.currentDeck && CardStorage.getByDeck($store.app.currentDeck.id).length > 0">
+              <button 
+                @click="$store.session.start($store.app.currentDeck.id)"
+                class="btn btn-accent px-8 py-4 rounded-xl font-heading font-semibold text-lg flex items-center justify-center gap-3 glow-accent"
+              >
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                Start Study Session
+              </button>
+            </template>
+            
+            <button 
+              @click="$store.app.navigate('login')"
+              class="btn surface px-8 py-4 rounded-xl font-heading font-semibold text-lg flex items-center justify-center gap-3 hover:border-accent"
+            >
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+              </svg>
+              <span x-text="$store.app.isAuthenticated ? 'Add Deck from Google Sheets' : 'Connect Google Sheets'"></span>
+            </button>
+          </div>
+          
+          <!-- Decks List -->
+          <template x-if="$store.app.decks.length > 0">
+            <div class="space-y-4">
+              <h2 class="font-heading text-xl font-semibold">Your Decks</h2>
+              <div class="grid gap-4 sm:grid-cols-2">
+                <template x-for="deck in $store.app.decks" :key="deck.id">
+                  <div 
+                    class="deck-card surface rounded-xl p-5 cursor-pointer transition"
+                    :class="{ 'border-accent': $store.app.currentDeck?.id === deck.id }"
+                    @click="$store.app.selectDeck(deck.id)"
+                  >
+                    <div class="flex items-start justify-between gap-4">
+                      <div class="flex-1 min-w-0">
+                        <h3 class="font-heading font-semibold truncate" x-text="deck.name"></h3>
+                        <p class="text-sm text-text-muted mt-1">
+                          <span x-text="CardStorage.getByDeck(deck.id).length"></span> cards
+                        </p>
+                      </div>
+                      <button 
+                        @click.stop="if(confirm('Delete this deck?')) $store.app.deleteDeck(deck.id)"
+                        class="p-2 text-text-muted hover:text-error transition rounded"
+                      >
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </template>
+          
+          <!-- Quick Stats -->
+          <template x-if="$store.app.currentDeck">
+            <div 
+              x-data="{ stats: ReviewStorage.getDeckStats($store.app.currentDeck.id) }"
+              class="grid grid-cols-2 sm:grid-cols-4 gap-4"
+            >
+              <div class="stat-card rounded-xl p-4 text-center">
+                <p class="text-2xl font-heading font-bold text-accent" x-text="stats.totalCards"></p>
+                <p class="text-sm text-text-muted">Total Cards</p>
+              </div>
+              <div class="stat-card rounded-xl p-4 text-center">
+                <p class="text-2xl font-heading font-bold text-accent" x-text="stats.totalReviews"></p>
+                <p class="text-sm text-text-muted">Reviews</p>
+              </div>
+              <div class="stat-card rounded-xl p-4 text-center">
+                <p class="text-2xl font-heading font-bold text-success" x-text="stats.correctRate + '%'"></p>
+                <p class="text-sm text-text-muted">Success Rate</p>
+              </div>
+              <div class="stat-card rounded-xl p-4 text-center">
+                <p class="text-2xl font-heading font-bold text-accent" x-text="(stats.avgDurationMs / 1000).toFixed(1) + 's'"></p>
+                <p class="text-sm text-text-muted">Avg Time</p>
+              </div>
+            </div>
+          </template>
+          
+        </div>
+      </template>
+
+      <!-- SESSION VIEW -->
+      <template x-if="$store.app.currentView === 'session'">
+        <div 
+          class="flex flex-col items-center justify-center min-h-[70vh]"
+          @keydown.window.space.prevent="$store.session.flip()"
+          @keydown.window.x="$store.session.answer(false)"
+          @keydown.window.enter.prevent="$store.session.answer(true)"
+          @keydown.window.escape="$store.session.end()"
+        >
+          
+          <!-- Progress Bar -->
+          <div class="w-full max-w-md mb-8">
+            <div class="flex justify-between text-sm text-text-muted mb-2">
+              <span x-text="$store.session.reviewedCount + ' reviewed'"></span>
+              <span x-text="$store.session.queue.length + ' remaining'"></span>
+            </div>
+            <div class="progress-bar h-2">
+              <div 
+                class="progress-fill" 
+                :style="'width: ' + $store.session.getProgress() + '%'"
+              ></div>
+            </div>
+          </div>
+          
+          <!-- Flashcard -->
+          <template x-if="$store.session.currentCard">
+            <div class="w-full max-w-md">
+              <div 
+                class="card-container w-full aspect-[3/2] cursor-pointer mb-8"
+                @click="$store.session.flip()"
+              >
+                <div 
+                  class="card w-full h-full"
+                  :class="{ 'flipped': $store.session.state === 'answer' }"
+                >
+                  <!-- Question (Front) -->
+                  <div class="card-face front">
+                    <div class="text-center">
+                      <p class="text-sm text-text-muted mb-4 uppercase tracking-wider">Question</p>
+                      <p class="text-2xl font-heading font-semibold" x-text="$store.session.currentCard.question"></p>
+                      <p class="text-sm text-text-muted mt-6">Tap to reveal answer</p>
+                    </div>
+                  </div>
+                  
+                  <!-- Answer (Back) -->
+                  <div class="card-face back">
+                    <div class="text-center">
+                      <p class="text-sm text-text-muted mb-4 uppercase tracking-wider">Answer</p>
+                      <p class="text-2xl font-heading font-semibold" x-text="$store.session.currentCard.answer"></p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Answer Buttons (always rendered to prevent layout shift) -->
+              <div 
+                class="flex gap-4 transition-opacity duration-200"
+                :class="$store.session.state === 'answer' ? 'opacity-100' : 'opacity-0 pointer-events-none'"
+              >
+                <button 
+                  @click="$store.session.answer(false)"
+                  class="btn btn-error flex-1 py-4 rounded-xl font-heading font-semibold text-lg flex items-center justify-center gap-2"
+                >
+                  <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                  </svg>
+                  Missed
+                </button>
+                <button 
+                  @click="$store.session.answer(true)"
+                  class="btn btn-success flex-1 py-4 rounded-xl font-heading font-semibold text-lg flex items-center justify-center gap-2"
+                >
+                  <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                  </svg>
+                  Got it!
+                </button>
+              </div>
+            </div>
+          </template>
+          
+          <!-- End Session Button -->
+          <button 
+            @click="$store.session.end()"
+            class="mt-8 text-text-muted hover:text-text-primary transition"
+          >
+            End Session
+          </button>
+          
+          <!-- Keyboard Shortcuts Hint -->
+          <div class="mt-6 text-xs text-text-muted text-center space-x-4 hidden sm:block">
+            <span><kbd class="px-2 py-1 bg-surface rounded">Space</kbd> Flip</span>
+            <span><kbd class="px-2 py-1 bg-surface rounded">Enter</kbd> Got it</span>
+            <span><kbd class="px-2 py-1 bg-surface rounded">X</kbd> Missed</span>
+            <span><kbd class="px-2 py-1 bg-surface rounded">Esc</kbd> End</span>
+          </div>
+          
+        </div>
+      </template>
+
+      <!-- STATS VIEW -->
+      <template x-if="$store.app.currentView === 'stats'">
+        <div class="space-y-8">
+          
+          <!-- Back Button -->
+          <button 
+            @click="$store.stats.view === 'card' ? $store.stats.backToDeck() : $store.app.navigate('home')"
+            class="flex items-center gap-2 text-text-muted hover:text-text-primary transition"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+            </svg>
+            Back
+          </button>
+          
+          <!-- Deck Stats View -->
+          <template x-if="$store.stats.view === 'deck'">
+            <div class="space-y-8">
+              <h1 class="font-heading text-2xl font-bold">Statistics</h1>
+              
+              <!-- Global Stats -->
+              <template x-if="$store.stats.deckStats">
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div class="stat-card rounded-xl p-5 text-center">
+                    <p class="text-3xl font-heading font-bold text-accent" x-text="$store.stats.deckStats.totalCards"></p>
+                    <p class="text-sm text-text-muted mt-1">Total Cards</p>
+                  </div>
+                  <div class="stat-card rounded-xl p-5 text-center">
+                    <p class="text-3xl font-heading font-bold text-accent" x-text="$store.stats.deckStats.cardsStudied"></p>
+                    <p class="text-sm text-text-muted mt-1">Cards Studied</p>
+                  </div>
+                  <div class="stat-card rounded-xl p-5 text-center">
+                    <p class="text-3xl font-heading font-bold text-success" x-text="$store.stats.deckStats.correctRate + '%'"></p>
+                    <p class="text-sm text-text-muted mt-1">Success Rate</p>
+                  </div>
+                  <div class="stat-card rounded-xl p-5 text-center">
+                    <p class="text-3xl font-heading font-bold text-accent" x-text="$store.stats.deckStats.totalReviews"></p>
+                    <p class="text-sm text-text-muted mt-1">Total Reviews</p>
+                  </div>
+                </div>
+              </template>
+              
+              <!-- Per-Card Stats -->
+              <div class="space-y-4">
+                <h2 class="font-heading text-xl font-semibold">Cards</h2>
+                <div class="space-y-2">
+                  <template x-for="card in $store.stats.cardStats" :key="card.id">
+                    <div 
+                      class="surface rounded-lg p-4 cursor-pointer hover:border-accent transition"
+                      @click="$store.stats.selectCard(card)"
+                    >
+                      <div class="flex items-center justify-between gap-4">
+                        <div class="flex-1 min-w-0">
+                          <p class="font-medium truncate" x-text="card.question"></p>
+                          <p class="text-sm text-text-muted truncate" x-text="card.answer"></p>
+                        </div>
+                        <div class="flex items-center gap-4 text-sm">
+                          <span class="text-text-muted" x-text="card.stats.totalReviews + ' reviews'"></span>
+                          <span 
+                            class="font-semibold"
+                            :class="{
+                              'text-success': card.stats.totalReviews > 0 && (card.stats.correct / card.stats.totalReviews) >= 0.7,
+                              'text-error': card.stats.totalReviews > 0 && (card.stats.correct / card.stats.totalReviews) < 0.5,
+                              'text-text-muted': card.stats.totalReviews === 0
+                            }"
+                            x-text="card.stats.totalReviews > 0 ? Math.round((card.stats.correct / card.stats.totalReviews) * 100) + '%' : '-'"
+                          ></span>
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </div>
+          </template>
+          
+          <!-- Card Detail View -->
+          <template x-if="$store.stats.view === 'card' && $store.stats.selectedCard">
+            <div class="space-y-6" x-data="{ card: $store.stats.selectedCard }">
+              <div class="surface rounded-xl p-6">
+                <p class="text-sm text-text-muted uppercase tracking-wider mb-2">Question</p>
+                <p class="text-xl font-heading font-semibold" x-text="card.question"></p>
+              </div>
+              
+              <div class="surface rounded-xl p-6">
+                <p class="text-sm text-text-muted uppercase tracking-wider mb-2">Answer</p>
+                <p class="text-xl font-heading font-semibold" x-text="card.answer"></p>
+              </div>
+              
+              <div class="grid grid-cols-2 gap-4">
+                <div class="stat-card rounded-xl p-5 text-center">
+                  <p class="text-3xl font-heading font-bold text-accent" x-text="card.stats.totalReviews"></p>
+                  <p class="text-sm text-text-muted mt-1">Total Reviews</p>
+                </div>
+                <div class="stat-card rounded-xl p-5 text-center">
+                  <p class="text-3xl font-heading font-bold text-success" x-text="card.stats.correct"></p>
+                  <p class="text-sm text-text-muted mt-1">Correct</p>
+                </div>
+                <div class="stat-card rounded-xl p-5 text-center">
+                  <p class="text-3xl font-heading font-bold text-error" x-text="card.stats.incorrect"></p>
+                  <p class="text-sm text-text-muted mt-1">Incorrect</p>
+                </div>
+                <div class="stat-card rounded-xl p-5 text-center">
+                  <p class="text-3xl font-heading font-bold text-accent" x-text="card.stats.streak"></p>
+                  <p class="text-sm text-text-muted mt-1">Current Streak</p>
+                </div>
+              </div>
+              
+              <div class="surface rounded-xl p-5">
+                <div class="flex justify-between items-center">
+                  <span class="text-text-muted">Average Response Time</span>
+                  <span class="font-semibold" x-text="(card.stats.avgDurationMs / 1000).toFixed(1) + 's'"></span>
+                </div>
+                <div class="flex justify-between items-center mt-3">
+                  <span class="text-text-muted">Last Reviewed</span>
+                  <span class="font-semibold" x-text="card.stats.lastSeenAt ? new Date(card.stats.lastSeenAt).toLocaleDateString() : 'Never'"></span>
+                </div>
+              </div>
+            </div>
+          </template>
+          
+        </div>
+      </template>
+
+      <!-- SETTINGS VIEW -->
+      <template x-if="$store.app.currentView === 'settings'">
+        <div class="space-y-8">
+          
+          <!-- Back Button -->
+          <button 
+            @click="$store.app.navigate('home')"
+            class="flex items-center gap-2 text-text-muted hover:text-text-primary transition"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+            </svg>
+            Back
+          </button>
+          
+          <h1 class="font-heading text-2xl font-bold">Settings</h1>
+          
+          <!-- Algorithm Settings -->
+          <div class="surface rounded-xl p-6 space-y-6">
+            <h2 class="font-heading text-lg font-semibold">Algorithm Parameters</h2>
+            
+            <!-- Failure Weight -->
+            <div>
+              <div class="flex justify-between mb-2">
+                <label class="text-text-muted">Failure Weight</label>
+                <span class="font-mono text-accent" x-text="$store.settings.values.failureWeight"></span>
+              </div>
+              <input 
+                type="range" 
+                min="0" max="5" step="0.5"
+                class="w-full"
+                x-model="$store.settings.values.failureWeight"
+                @change="$store.settings.update('failureWeight', $event.target.value)"
+              >
+              <p class="text-xs text-text-muted mt-1">Higher = failed cards appear more often</p>
+            </div>
+            
+            <!-- Recency Weight -->
+            <div>
+              <div class="flex justify-between mb-2">
+                <label class="text-text-muted">Recency Weight</label>
+                <span class="font-mono text-accent" x-text="$store.settings.values.recencyWeight"></span>
+              </div>
+              <input 
+                type="range" 
+                min="0" max="5" step="0.5"
+                class="w-full"
+                x-model="$store.settings.values.recencyWeight"
+                @change="$store.settings.update('recencyWeight', $event.target.value)"
+              >
+              <p class="text-xs text-text-muted mt-1">Higher = old cards resurface faster</p>
+            </div>
+            
+            <!-- Exposure Weight -->
+            <div>
+              <div class="flex justify-between mb-2">
+                <label class="text-text-muted">Exposure Weight</label>
+                <span class="font-mono text-accent" x-text="$store.settings.values.exposureWeight"></span>
+              </div>
+              <input 
+                type="range" 
+                min="0" max="5" step="0.5"
+                class="w-full"
+                x-model="$store.settings.values.exposureWeight"
+                @change="$store.settings.update('exposureWeight', $event.target.value)"
+              >
+              <p class="text-xs text-text-muted mt-1">Higher = prioritize under-reviewed cards</p>
+            </div>
+            
+            <!-- Target Exposures -->
+            <div>
+              <div class="flex justify-between mb-2">
+                <label class="text-text-muted">Target Exposures</label>
+                <span class="font-mono text-accent" x-text="$store.settings.values.targetExposures"></span>
+              </div>
+              <input 
+                type="range" 
+                min="3" max="15" step="1"
+                class="w-full"
+                x-model="$store.settings.values.targetExposures"
+                @change="$store.settings.update('targetExposures', $event.target.value)"
+              >
+              <p class="text-xs text-text-muted mt-1">Minimum reviews per card</p>
+            </div>
+            
+            <!-- New Cards Per Session -->
+            <div>
+              <div class="flex justify-between mb-2">
+                <label class="text-text-muted">New Cards Per Session</label>
+                <span class="font-mono text-accent" x-text="$store.settings.values.newCardsPerSession"></span>
+              </div>
+              <input 
+                type="range" 
+                min="1" max="20" step="1"
+                class="w-full"
+                x-model="$store.settings.values.newCardsPerSession"
+                @change="$store.settings.update('newCardsPerSession', $event.target.value)"
+              >
+              <p class="text-xs text-text-muted mt-1">Max new cards introduced per session</p>
+            </div>
+            
+            <!-- Reset Button -->
+            <button 
+              @click="$store.settings.reset()"
+              class="w-full btn surface py-3 rounded-lg text-text-muted hover:text-error hover:border-error transition"
+            >
+              Reset to Defaults
+            </button>
+          </div>
+          
+          <!-- Account Section -->
+          <div class="surface rounded-xl p-6 space-y-4">
+            <h2 class="font-heading text-lg font-semibold">Account</h2>
+            
+            <template x-if="$store.app.isAuthenticated">
+              <div class="space-y-4">
+                <div class="flex items-center gap-4">
+                  <div class="w-12 h-12 bg-accent/20 rounded-full flex items-center justify-center">
+                    <span class="text-xl font-bold text-accent" x-text="$store.app.user?.name?.charAt(0) || '?'"></span>
+                  </div>
+                  <div>
+                    <p class="font-semibold" x-text="$store.app.user?.name || 'User'"></p>
+                    <p class="text-sm text-text-muted" x-text="$store.app.user?.email || ''"></p>
+                  </div>
+                </div>
+                <button 
+                  @click="$store.app.signOut()"
+                  class="w-full btn surface py-3 rounded-lg text-text-muted hover:text-error hover:border-error transition"
+                >
+                  Sign Out
+                </button>
+              </div>
+            </template>
+            
+            <template x-if="!$store.app.isAuthenticated">
+              <button 
+                @click="$store.app.navigate('login')"
+                class="w-full btn btn-accent py-3 rounded-lg font-semibold"
+              >
+                Connect Google Account
+              </button>
+            </template>
+          </div>
+          
+          <!-- Danger Zone -->
+          <div class="surface rounded-xl p-6 border-error/50 space-y-4">
+            <h2 class="font-heading text-lg font-semibold text-error">Danger Zone</h2>
+            <button 
+              @click="if(confirm('This will delete ALL your data including decks, cards, and review history. This cannot be undone. Continue?')) { Storage.clearAll(); location.reload(); }"
+              class="w-full btn py-3 rounded-lg border border-error text-error hover:bg-error hover:text-white transition"
+            >
+              Clear All Data
+            </button>
+          </div>
+          
+        </div>
+      </template>
+
+      <!-- LOGIN VIEW (Placeholder for Milestone 4) -->
+      <template x-if="$store.app.currentView === 'login'">
+        <div class="flex flex-col items-center justify-center min-h-[60vh] text-center">
+          
+          <div class="w-20 h-20 bg-surface rounded-2xl flex items-center justify-center mb-6">
+            <svg class="w-10 h-10 text-accent" viewBox="0 0 24 24">
+              <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+              <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+              <path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+              <path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+            </svg>
+          </div>
+          
+          <h1 class="font-heading text-2xl font-bold mb-2">Connect Google Sheets</h1>
+          <p class="text-text-muted mb-8 max-w-sm">
+            Sign in with Google to import flashcards from your spreadsheets
+          </p>
+          
+          <button 
+            @click="GoogleAuth.signIn()"
+            class="btn bg-white text-gray-800 px-8 py-4 rounded-xl font-semibold flex items-center gap-3 hover:bg-gray-100 transition"
+          >
+            <svg class="w-6 h-6" viewBox="0 0 24 24">
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+            </svg>
+            Sign in with Google
+          </button>
+          
+          <p class="text-xs text-text-muted mt-6 max-w-sm">
+            We only request read access to your spreadsheets. Your data stays on your device.
+          </p>
+          
+          <button 
+            @click="$store.app.navigate('home')"
+            class="mt-8 text-text-muted hover:text-text-primary transition"
+          >
+            Back to Home
+          </button>
+          
+        </div>
+      </template>
+
+      <!-- PICKER VIEW -->
+      <template x-if="$store.app.currentView === 'picker'">
+        <div class="space-y-8" x-data="{ sheetUrl: '', isImporting: false }">
+          <button 
+            @click="$store.app.navigate('home')"
+            class="flex items-center gap-2 text-text-muted hover:text-text-primary transition"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+            </svg>
+            Back
+          </button>
+          
+          <h1 class="font-heading text-2xl font-bold">Import from Google Sheets</h1>
+          
+          <div class="surface rounded-xl p-6 space-y-4">
+            <p class="text-text-muted">
+              Paste the URL of your Google Sheets spreadsheet. Make sure Column A has questions and Column B has answers.
+            </p>
+            
+            <!-- URL Input -->
+            <div class="space-y-2">
+              <label class="block text-sm font-medium">Spreadsheet URL</label>
+              <input 
+                type="url"
+                x-model="sheetUrl"
+                placeholder="https://docs.google.com/spreadsheets/d/..."
+                class="w-full px-4 py-3 bg-bg border border-border rounded-lg focus:border-accent focus:outline-none transition"
+              >
+            </div>
+            
+            <!-- Import Button -->
+            <button 
+              @click="isImporting = true; SheetsService.importFromUrl(sheetUrl).finally(() => isImporting = false)"
+              :disabled="!sheetUrl || isImporting"
+              class="w-full btn btn-accent py-3 rounded-lg font-semibold flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <template x-if="isImporting">
+                <svg class="spinner w-5 h-5" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                </svg>
+              </template>
+              <template x-if="!isImporting">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                </svg>
+              </template>
+              <span x-text="isImporting ? 'Importing...' : 'Import Spreadsheet'"></span>
+            </button>
+          </div>
+          
+          <!-- Help Section -->
+          <div class="surface rounded-xl p-6 space-y-4">
+            <h2 class="font-heading font-semibold">How to get the URL</h2>
+            <ol class="list-decimal list-inside space-y-2 text-text-muted text-sm">
+              <li>Open your spreadsheet in Google Sheets</li>
+              <li>Copy the URL from your browser's address bar</li>
+              <li>Paste it above</li>
+            </ol>
+            
+            <h2 class="font-heading font-semibold mt-4">Spreadsheet format</h2>
+            <div class="bg-bg rounded-lg p-4 font-mono text-sm">
+              <div class="grid grid-cols-2 gap-4">
+                <div class="text-text-muted">Column A (Question)</div>
+                <div class="text-text-muted">Column B (Answer)</div>
+                <div>Bonjour</div>
+                <div>Hello</div>
+                <div>Merci</div>
+                <div>Thank you</div>
+              </div>
+            </div>
+          </div>
+          
+        </div>
+      </template>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-border py-4 text-center text-sm text-text-muted">
+      <p>Flashcards &bull; Spaced Repetition Learning</p>
+    </footer>
+    
+  </div>
+
+  <!-- Scripts -->
+  <script src="js/storage.js"></script>
+  <script src="js/scheduler.js"></script>
+  <script src="js/google.js"></script>
+  <script src="js/sync.js"></script>
+  <script src="js/app.js"></script>
+  
+</body>
+</html>
+
