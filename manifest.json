@@ -2,7 +2,7 @@
   "name": "Flashcards",
   "short_name": "Flashcards",
   "description": "Learn smarter with spaced repetition flashcards powered by Google Sheets",
-  "start_url": "/",
+  "start_url": "/flash-cards",
   "display": "standalone",
   "background_color": "#1a1a2e",
   "theme_color": "#1a1a2e",
