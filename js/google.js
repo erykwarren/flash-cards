@@ -342,7 +342,7 @@ const DriveService = {
 const SheetsService = {
   /**
    * Read flashcard data from a spreadsheet
-   * Expects Column A = Question, Column B = Answer
+   * Expects Column A = Question, Column B = Answer, Column C = Example (optional)
    */
   async readSpreadsheet(spreadsheetId) {
     const accessToken = GoogleAuth.getAccessToken();
@@ -351,8 +351,8 @@ const SheetsService = {
     }
 
     try {
-      // Read columns A and B from the first sheet
-      const range = encodeURIComponent('A:B');
+      // Read columns A, B, and C from the first sheet
+      const range = encodeURIComponent('A:C');
       
       const response = await fetch(
         `${GOOGLE_CONFIG.SHEETS_API}/${spreadsheetId}/values/${range}`,
@@ -391,10 +391,11 @@ const SheetsService = {
         const row = rows[i];
         const question = (row[0] || '').trim();
         const answer = (row[1] || '').trim();
+        const example = (row[2] || '').trim();
         
         // Skip empty rows
         if (question && answer) {
-          cards.push({ question, answer });
+          cards.push({ question, answer, example: example || null });
         }
       }
 

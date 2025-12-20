@@ -317,6 +317,12 @@
                     <div class="text-center">
                       <p class="text-sm text-text-muted mb-4 uppercase tracking-wider">Answer</p>
                       <p class="text-2xl font-heading font-semibold" x-text="$store.session.currentCard.answer"></p>
+                      <template x-if="$store.session.currentCard.example">
+                        <div class="mt-6 pt-4 border-t border-border/50">
+                          <p class="text-sm text-text-muted mb-2 uppercase tracking-wider">Example</p>
+                          <p class="text-base text-text-primary/80 italic" x-text="$store.session.currentCard.example"></p>
+                        </div>
+                      </template>
                     </div>
                   </div>
                 </div>
@@ -455,6 +461,12 @@
               <div class="surface rounded-xl p-6">
                 <p class="text-sm text-text-muted uppercase tracking-wider mb-2">Answer</p>
                 <p class="text-xl font-heading font-semibold" x-text="card.answer"></p>
+                <template x-if="card.example">
+                  <div class="mt-4 pt-4 border-t border-border/50">
+                    <p class="text-sm text-text-muted uppercase tracking-wider mb-2">Example</p>
+                    <p class="text-base text-text-primary/80 italic" x-text="card.example"></p>
+                  </div>
+                </template>
               </div>
               
               <div class="grid grid-cols-2 gap-4">
@@ -712,7 +724,7 @@
           
           <div class="surface rounded-xl p-6 space-y-4">
             <p class="text-text-muted">
-              Paste the URL of your Google Sheets spreadsheet. Make sure Column A has questions and Column B has answers.
+              Paste the URL of your Google Sheets spreadsheet. Column A = questions, Column B = answers, Column C = examples (optional).
             </p>
             
             <!-- URL Input -->
@@ -757,16 +769,20 @@
             </ol>
             
             <h2 class="font-heading font-semibold mt-4">Spreadsheet format</h2>
-            <div class="bg-bg rounded-lg p-4 font-mono text-sm">
-              <div class="grid grid-cols-2 gap-4">
+            <div class="bg-bg rounded-lg p-4 font-mono text-sm overflow-x-auto">
+              <div class="grid grid-cols-3 gap-4 min-w-[400px]">
                 <div class="text-text-muted">Column A (Question)</div>
                 <div class="text-text-muted">Column B (Answer)</div>
-                <div>Bonjour</div>
-                <div>Hello</div>
-                <div>Merci</div>
-                <div>Thank you</div>
+                <div class="text-text-muted">Column C (Example)</div>
+                <div>mesurer</div>
+                <div>medir (-i-)</div>
+                <div class="text-text-muted/70 italic">¿Cuánto mides tú?</div>
+                <div>taille</div>
+                <div>tamaño</div>
+                <div class="text-text-muted/70 italic">Este zapato es de mi tamaño.</div>
               </div>
             </div>
+            <p class="text-xs text-text-muted mt-2">Column C is optional - examples will appear on the answer side of flashcards.</p>
           </div>
           
         </div>

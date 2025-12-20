@@ -173,9 +173,12 @@ const CardStorage = {
     // Check if card already exists
     const existing = cards.find(c => c.id === id);
     if (existing) {
-      // Unarchive if it was archived
-      if (existing.isArchived) {
-        return this.update(id, { isArchived: false });
+      // Unarchive if it was archived, and update example if provided
+      if (existing.isArchived || card.example !== existing.example) {
+        return this.update(id, { 
+          isArchived: false,
+          example: card.example || null
+        });
       }
       return existing;
     }
@@ -185,6 +188,7 @@ const CardStorage = {
       deckId: card.deckId,
       question: card.question.trim(),
       answer: card.answer.trim(),
+      example: card.example || null,
       isArchived: false,
       createdAt: new Date().toISOString()
     };
@@ -224,7 +228,7 @@ const CardStorage = {
   /**
    * Bulk create/update cards (for sync)
    * @param {string} deckId - Deck ID
-   * @param {Array} cardData - Array of {question, answer} objects
+   * @param {Array} cardData - Array of {question, answer, example} objects
    * @returns {Promise<{created: number, updated: number, archived: number}>}
    */
   async syncCards(deckId, cardData) {
@@ -240,8 +244,12 @@ const CardStorage = {
       
       const existing = existingCards.find(c => c.id === id);
       if (existing) {
-        if (existing.isArchived) {
-          this.update(id, { isArchived: false });
+        // Update if archived or if example has changed
+        if (existing.isArchived || existing.example !== (data.example || null)) {
+          this.update(id, { 
+            isArchived: false,
+            example: data.example || null
+          });
           updated++;
         }
       } else {
