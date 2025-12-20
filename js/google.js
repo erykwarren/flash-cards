@@ -34,6 +34,12 @@ const GoogleAuth = {
   
   // Whether the API is loaded
   isLoaded: false,
+  
+  // Whether we're currently refreshing silently
+  isRefreshing: false,
+  
+  // Pending operations waiting for token refresh
+  pendingRefreshCallbacks: [],
 
   /**
    * Initialize Google Identity Services
@@ -58,9 +64,51 @@ const GoogleAuth = {
     // Check for existing token
     const stored = AuthStorage.getToken();
     if (stored && stored.access_token) {
-      // Verify token is still valid
-      this.validateToken(stored.access_token);
+      // Check if token is expired or about to expire (within 5 minutes)
+      const isExpired = stored.expires_at && Date.now() > stored.expires_at;
+      const isExpiringSoon = stored.expires_at && Date.now() > (stored.expires_at - 5 * 60 * 1000);
+      
+      if (isExpired || isExpiringSoon) {
+        console.log('Token expired or expiring soon, attempting silent refresh...');
+        // Set user info from stored data so UI shows logged in state
+        if (stored.user) {
+          Alpine.store('app').user = stored.user;
+        }
+        this.silentRefresh();
+      } else {
+        // Token still valid, verify it
+        this.validateToken(stored.access_token);
+      }
     }
+  },
+
+  /**
+   * Attempt to silently refresh the access token
+   * This works if the user has previously authorized the app
+   */
+  silentRefresh() {
+    if (!this.isLoaded || this.isRefreshing) {
+      return Promise.resolve(false);
+    }
+
+    return new Promise((resolve) => {
+      this.isRefreshing = true;
+      console.log('Attempting silent token refresh...');
+      
+      // Store the resolve callback
+      this.pendingRefreshCallbacks.push(resolve);
+      
+      // Try to get a new token without showing the consent screen
+      // Using empty string for prompt attempts silent auth
+      try {
+        this.tokenClient.requestAccessToken({ prompt: '' });
+      } catch (error) {
+        console.log('Silent refresh failed:', error);
+        this.isRefreshing = false;
+        this.pendingRefreshCallbacks.forEach(cb => cb(false));
+        this.pendingRefreshCallbacks = [];
+      }
+    });
   },
 
   /**
@@ -77,7 +125,7 @@ const GoogleAuth = {
       return;
     }
 
-    // Request access token
+    // Request access token with consent prompt
     this.tokenClient.requestAccessToken({ prompt: 'consent' });
   },
 
@@ -85,15 +133,23 @@ const GoogleAuth = {
    * Handle token response from OAuth flow
    */
   handleTokenResponse(tokenResponse) {
+    const wasRefreshing = this.isRefreshing;
+    this.isRefreshing = false;
+    
     if (tokenResponse.error) {
       this.handleError(tokenResponse);
       return;
     }
 
-    console.log('Token received');
+    console.log('Token received' + (wasRefreshing ? ' (silent refresh)' : ''));
 
-    // Get user info
-    this.getUserInfo(tokenResponse.access_token).then(user => {
+    // Get user info (or use stored user info for silent refresh)
+    const stored = AuthStorage.getToken();
+    const userPromise = (wasRefreshing && stored && stored.user) 
+      ? Promise.resolve(stored.user)
+      : this.getUserInfo(tokenResponse.access_token);
+
+    userPromise.then(user => {
       // Store token and user info
       AuthStorage.setToken({
         access_token: tokenResponse.access_token,
@@ -105,13 +161,18 @@ const GoogleAuth = {
       // Update app state
       Alpine.store('app').isAuthenticated = true;
       Alpine.store('app').user = user;
-      Alpine.store('app').showSuccess('Signed in successfully!');
       
-      // Navigate to file picker
-      Alpine.store('app').navigate('picker');
-      
-      // Load spreadsheets
-      DriveService.loadSpreadsheets();
+      // Resolve any pending refresh callbacks
+      if (wasRefreshing) {
+        console.log('Silent refresh successful');
+        this.pendingRefreshCallbacks.forEach(cb => cb(true));
+        this.pendingRefreshCallbacks = [];
+      } else {
+        // Only show message and navigate on explicit sign-in
+        Alpine.store('app').showSuccess('Signed in successfully!');
+        Alpine.store('app').navigate('picker');
+        DriveService.loadSpreadsheets();
+      }
     });
   },
 
@@ -119,7 +180,22 @@ const GoogleAuth = {
    * Handle OAuth errors
    */
   handleError(error) {
+    const wasRefreshing = this.isRefreshing;
+    this.isRefreshing = false;
+    
     console.error('Google Auth error:', error);
+    
+    // Handle silent refresh failure gracefully
+    if (wasRefreshing) {
+      console.log('Silent refresh failed, user will need to sign in again');
+      // Clear the stored token since it's no longer valid
+      AuthStorage.clearToken();
+      Alpine.store('app').isAuthenticated = false;
+      // Resolve pending callbacks with failure
+      this.pendingRefreshCallbacks.forEach(cb => cb(false));
+      this.pendingRefreshCallbacks = [];
+      return;
+    }
     
     let message = 'Sign-in failed. Please try again.';
     
@@ -171,8 +247,14 @@ const GoogleAuth = {
         Alpine.store('app').user = stored.user;
         console.log('Token validated');
       } else {
-        // Token expired or invalid
-        this.signOut();
+        // Token expired or invalid, try silent refresh
+        console.log('Token invalid, attempting silent refresh...');
+        const refreshed = await this.silentRefresh();
+        if (!refreshed) {
+          // Silent refresh failed, clear auth state but don't sign out
+          // This preserves user info for display but marks as unauthenticated
+          Alpine.store('app').isAuthenticated = false;
+        }
       }
     } catch (error) {
       console.error('Token validation failed:', error);
@@ -200,7 +282,7 @@ const GoogleAuth = {
   },
 
   /**
-   * Get current access token (refreshes if needed)
+   * Get current access token (does not refresh)
    */
   getAccessToken() {
     const stored = AuthStorage.getToken();
@@ -211,9 +293,38 @@ const GoogleAuth = {
 
     // Check if token is expired
     if (stored.expires_at && Date.now() > stored.expires_at) {
-      console.log('Token expired, need to re-authenticate');
-      this.signOut();
+      console.log('Token expired');
       return null;
+    }
+
+    return stored.access_token;
+  },
+
+  /**
+   * Ensure we have a valid access token, refreshing if needed
+   * @returns {Promise<string|null>} The access token or null if not available
+   */
+  async ensureAccessToken() {
+    const stored = AuthStorage.getToken();
+    
+    if (!stored || !stored.access_token) {
+      return null;
+    }
+
+    // Check if token is expired or about to expire (within 1 minute)
+    const isExpired = stored.expires_at && Date.now() > stored.expires_at;
+    const isExpiringSoon = stored.expires_at && Date.now() > (stored.expires_at - 60 * 1000);
+    
+    if (isExpired || isExpiringSoon) {
+      console.log('Token expired or expiring soon, attempting silent refresh...');
+      const refreshed = await this.silentRefresh();
+      if (refreshed) {
+        // Get the new token
+        const newStored = AuthStorage.getToken();
+        return newStored?.access_token || null;
+      } else {
+        return null;
+      }
     }
 
     return stored.access_token;
@@ -235,9 +346,9 @@ const DriveService = {
    * Load spreadsheets from Drive
    */
   async loadSpreadsheets() {
-    const accessToken = GoogleAuth.getAccessToken();
+    const accessToken = await GoogleAuth.ensureAccessToken();
     if (!accessToken) {
-      Alpine.store('app').showError('Not authenticated');
+      Alpine.store('app').showError('Not authenticated. Please sign in again.');
       return;
     }
 
@@ -258,8 +369,10 @@ const DriveService = {
 
       if (!response.ok) {
         if (response.status === 401) {
-          GoogleAuth.signOut();
-          throw new Error('Session expired. Please sign in again.');
+          // Token might have been invalidated server-side
+          Alpine.store('app').showError('Session expired. Please sign in again.');
+          Alpine.store('app').isAuthenticated = false;
+          return;
         }
         throw new Error('Failed to load spreadsheets');
       }
@@ -345,9 +458,10 @@ const SheetsService = {
    * Expects Column A = Question, Column B = Answer, Column C = Example (optional)
    */
   async readSpreadsheet(spreadsheetId) {
-    const accessToken = GoogleAuth.getAccessToken();
+    // Use ensureAccessToken to automatically refresh expired tokens
+    const accessToken = await GoogleAuth.ensureAccessToken();
     if (!accessToken) {
-      return { success: false, error: 'Not authenticated' };
+      return { success: false, error: 'Not authenticated. Please sign in again.' };
     }
 
     try {
@@ -457,8 +571,8 @@ const SheetsService = {
       return;
     }
 
-    // Check authentication
-    const accessToken = GoogleAuth.getAccessToken();
+    // Check authentication (will try silent refresh if needed)
+    const accessToken = await GoogleAuth.ensureAccessToken();
     if (!accessToken) {
       Alpine.store('app').showError('Please sign in with Google first.');
       Alpine.store('app').navigate('login');
@@ -475,12 +589,13 @@ const SheetsService = {
         throw new Error(result.error);
       }
 
-      // Get spreadsheet metadata for the name
+      // Get spreadsheet metadata for the name (use fresh token)
       let sheetName = 'Imported Deck';
       try {
+        const currentToken = await GoogleAuth.ensureAccessToken();
         const metaResponse = await fetch(
           `${GOOGLE_CONFIG.SHEETS_API}/${spreadsheetId}?fields=properties.title`,
-          { headers: { 'Authorization': `Bearer ${accessToken}` } }
+          { headers: { 'Authorization': `Bearer ${currentToken}` } }
         );
         if (metaResponse.ok) {
           const meta = await metaResponse.json();
