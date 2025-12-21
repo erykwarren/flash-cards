@@ -1,6 +1,7 @@
 {
   "name": "Flashcards",
   "short_name": "Flashcards",
+  "version": "1.1.0",
   "description": "Learn smarter with spaced repetition flashcards powered by Google Sheets",
   "start_url": "/flash-cards",
   "display": "standalone",

@@ -23,6 +23,9 @@ node_modules/
 dist/
 build/
 
+# Auto-generated version file
+version.js
+
 # Cursor AI
 .cursor/
 
