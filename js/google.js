@@ -63,22 +63,36 @@ const GoogleAuth = {
 
     // Check for existing token
     const stored = AuthStorage.getToken();
+    console.log('Stored token check:', stored ? 'found' : 'not found');
+    
     if (stored && stored.access_token) {
       // Check if token is expired or about to expire (within 5 minutes)
-      const isExpired = stored.expires_at && Date.now() > stored.expires_at;
-      const isExpiringSoon = stored.expires_at && Date.now() > (stored.expires_at - 5 * 60 * 1000);
+      const now = Date.now();
+      const expiresAt = stored.expires_at;
+      const isExpired = expiresAt && now > expiresAt;
+      const isExpiringSoon = expiresAt && now > (expiresAt - 5 * 60 * 1000);
+      
+      console.log('Token state:', {
+        hasExpiresAt: !!expiresAt,
+        isExpired,
+        isExpiringSoon,
+        expiresIn: expiresAt ? Math.round((expiresAt - now) / 1000) + 's' : 'unknown'
+      });
       
       if (isExpired || isExpiringSoon) {
         console.log('Token expired or expiring soon, attempting silent refresh...');
-        // Set user info from stored data so UI shows logged in state
+        // Set user info from stored data so UI shows logged in state temporarily
         if (stored.user) {
           Alpine.store('app').user = stored.user;
         }
         this.silentRefresh();
       } else {
-        // Token still valid, verify it
+        // Token still valid, verify it with Google
         this.validateToken(stored.access_token);
       }
+    } else if (stored) {
+      console.log('Stored token has no access_token, clearing');
+      AuthStorage.clearToken();
     }
   },
 
@@ -87,8 +101,16 @@ const GoogleAuth = {
    * This works if the user has previously authorized the app
    */
   silentRefresh() {
-    if (!this.isLoaded || this.isRefreshing) {
+    if (!this.isLoaded) {
+      console.log('Silent refresh skipped: GIS not loaded');
       return Promise.resolve(false);
+    }
+    
+    if (this.isRefreshing) {
+      console.log('Silent refresh already in progress, waiting...');
+      return new Promise((resolve) => {
+        this.pendingRefreshCallbacks.push(resolve);
+      });
     }
 
     return new Promise((resolve) => {
@@ -100,14 +122,8 @@ const GoogleAuth = {
       
       // Try to get a new token without showing the consent screen
       // Using empty string for prompt attempts silent auth
-      try {
-        this.tokenClient.requestAccessToken({ prompt: '' });
-      } catch (error) {
-        console.log('Silent refresh failed:', error);
-        this.isRefreshing = false;
-        this.pendingRefreshCallbacks.forEach(cb => cb(false));
-        this.pendingRefreshCallbacks = [];
-      }
+      // Note: requestAccessToken is async and uses callbacks, not try/catch
+      this.tokenClient.requestAccessToken({ prompt: '' });
     });
   },
 
@@ -183,13 +199,12 @@ const GoogleAuth = {
     const wasRefreshing = this.isRefreshing;
     this.isRefreshing = false;
     
-    console.error('Google Auth error:', error);
+    console.error('Google Auth error:', error, 'wasRefreshing:', wasRefreshing);
     
     // Handle silent refresh failure gracefully
     if (wasRefreshing) {
-      console.log('Silent refresh failed, user will need to sign in again');
-      // Clear the stored token since it's no longer valid
-      AuthStorage.clearToken();
+      console.log('Silent refresh failed, user will need to sign in again. Error type:', error?.type);
+      // Don't clear the token yet - keep user info for display
       Alpine.store('app').isAuthenticated = false;
       // Resolve pending callbacks with failure
       this.pendingRefreshCallbacks.forEach(cb => cb(false));
@@ -305,19 +320,29 @@ const GoogleAuth = {
    * @returns {Promise<string|null>} The access token or null if not available
    */
   async ensureAccessToken() {
+    console.log('ensureAccessToken called');
     const stored = AuthStorage.getToken();
     
     if (!stored || !stored.access_token) {
+      console.log('ensureAccessToken: no stored token');
       return null;
     }
 
     // Check if token is expired or about to expire (within 1 minute)
-    const isExpired = stored.expires_at && Date.now() > stored.expires_at;
-    const isExpiringSoon = stored.expires_at && Date.now() > (stored.expires_at - 60 * 1000);
+    const now = Date.now();
+    const isExpired = stored.expires_at && now > stored.expires_at;
+    const isExpiringSoon = stored.expires_at && now > (stored.expires_at - 60 * 1000);
+    
+    console.log('ensureAccessToken: token state', {
+      isExpired,
+      isExpiringSoon,
+      expiresIn: stored.expires_at ? Math.round((stored.expires_at - now) / 1000) + 's' : 'unknown'
+    });
     
     if (isExpired || isExpiringSoon) {
-      console.log('Token expired or expiring soon, attempting silent refresh...');
+      console.log('ensureAccessToken: attempting silent refresh...');
       const refreshed = await this.silentRefresh();
+      console.log('ensureAccessToken: silent refresh result:', refreshed);
       if (refreshed) {
         // Get the new token
         const newStored = AuthStorage.getToken();
@@ -327,6 +352,7 @@ const GoogleAuth = {
       }
     }
 
+    console.log('ensureAccessToken: returning valid token');
     return stored.access_token;
   }
 };
