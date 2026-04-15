@@ -119,111 +119,75 @@ const Scheduler = {
   },
 
   /**
-   * Get the next single card to review
-   * Useful for continuous review mode
-   * 
-   * @param {string} deckId - Deck ID
-   * @param {string|null} excludeCardId - Card ID to exclude (e.g., current card)
-   * @returns {Object|null} Next card to review, or null if no cards
+   * Pick the single next card to review, ranked by retrievability.
+   * Picks randomly from the top 5 lowest-R cards for variety.
    */
   getNextCard(deckId, excludeCardId = null) {
-    const prioritized = this.calculateAllPriorities(deckId);
-    
-    // Filter out excluded card
-    const filtered = excludeCardId 
-      ? prioritized.filter(p => p.card.id !== excludeCardId)
-      : prioritized;
+    const cards = CardStorage.getByDeck(deckId).filter(c => c.id !== excludeCardId);
+    if (cards.length === 0) return null;
 
-    if (filtered.length === 0) {
-      return null;
-    }
+    const now = Date.now();
+    const scored = cards.map(card => {
+      const stats = ReviewStorage.getCardStats(card.id);
+      const R = stats.totalReviews === 0 ? 0
+        : this.calculateRetrievability(stats.stability, stats.lastReviewedAt, now);
+      return { card, R };
+    });
 
-    // Get top 5 by priority and randomly select one
-    const sorted = [...filtered].sort((a, b) => b.priority - a.priority);
-    const topN = sorted.slice(0, Math.min(5, sorted.length));
-    const selected = this.weightedSelect(topN, 1);
-
-    return selected.length > 0 ? selected[0].card : null;
+    scored.sort((a, b) => a.R - b.R);
+    const topN = scored.slice(0, Math.min(5, scored.length));
+    const pick = topN[Math.floor(Math.random() * topN.length)];
+    return pick.card;
   },
 
   /**
-   * Get cards that need urgent review
-   * (failed recently, not seen in a long time, or under-exposed)
-   * 
-   * @param {string} deckId - Deck ID
-   * @param {number} threshold - Priority threshold (default: 3.0)
-   * @returns {Array<Object>} Array of urgent cards with stats
+   * Cards whose predicted recall is below the given threshold.
+   * Default 0.5 means "50% or worse chance of recall right now."
    */
-  getUrgentCards(deckId, threshold = 3.0) {
-    const prioritized = this.calculateAllPriorities(deckId);
-    return prioritized
-      .filter(p => p.priority >= threshold)
-      .sort((a, b) => b.priority - a.priority);
+  getUrgentCards(deckId, maxRetrievability = 0.5) {
+    const cards = CardStorage.getByDeck(deckId);
+    const now = Date.now();
+    return cards
+      .map(card => {
+        const stats = ReviewStorage.getCardStats(card.id);
+        const R = stats.totalReviews === 0 ? 0
+          : this.calculateRetrievability(stats.stability, stats.lastReviewedAt, now);
+        return { card, stats, R };
+      })
+      .filter(x => x.R < maxRetrievability)
+      .sort((a, b) => a.R - b.R);
   },
 
   /**
-   * Get cards that are considered "mastered"
-   * (high success rate, met target exposures, good streak)
-   * 
-   * @param {string} deckId - Deck ID
-   * @returns {Array<Object>} Array of mastered cards with stats
+   * "Mastered" = stability has grown to at least 60 days with ≥ 3 reviews.
    */
   getMasteredCards(deckId) {
-    const settings = SettingsStorage.get();
-    const prioritized = this.calculateAllPriorities(deckId);
-    
-    return prioritized.filter(p => {
-      const successRate = p.stats.totalReviews > 0 
-        ? p.stats.correct / p.stats.totalReviews 
-        : 0;
-      
-      return (
-        p.stats.totalReviews >= settings.targetExposures &&
-        successRate >= 0.8 &&
-        p.stats.streak >= 2
-      );
-    });
+    const cards = CardStorage.getByDeck(deckId);
+    return cards
+      .map(card => ({ card, stats: ReviewStorage.getCardStats(card.id) }))
+      .filter(x => x.stats.totalReviews >= 3 && x.stats.stability >= 60);
   },
 
   /**
-   * Get learning progress summary for a deck
-   * 
-   * @param {string} deckId - Deck ID
-   * @returns {Object} Progress summary
+   * Summarize learning state: new / learning / mastered counts.
    */
   getProgress(deckId) {
-    const prioritized = this.calculateAllPriorities(deckId);
-    const settings = SettingsStorage.get();
-    
-    let newCount = 0;
-    let learningCount = 0;
-    let masteredCount = 0;
-    
-    for (const p of prioritized) {
-      if (p.stats.totalReviews === 0) {
-        newCount++;
-      } else {
-        const successRate = p.stats.correct / p.stats.totalReviews;
-        if (
-          p.stats.totalReviews >= settings.targetExposures &&
-          successRate >= 0.8 &&
-          p.stats.streak >= 2
-        ) {
-          masteredCount++;
-        } else {
-          learningCount++;
-        }
-      }
+    const cards = CardStorage.getByDeck(deckId);
+    let newCount = 0, learningCount = 0, masteredCount = 0;
+
+    for (const card of cards) {
+      const stats = ReviewStorage.getCardStats(card.id);
+      if (stats.totalReviews === 0) newCount++;
+      else if (stats.totalReviews >= 3 && stats.stability >= 60) masteredCount++;
+      else learningCount++;
     }
 
     return {
-      total: prioritized.length,
+      total: cards.length,
       new: newCount,
       learning: learningCount,
       mastered: masteredCount,
-      percentMastered: prioritized.length > 0 
-        ? Math.round((masteredCount / prioritized.length) * 100) 
-        : 0
+      percentMastered: cards.length > 0 ? Math.round((masteredCount / cards.length) * 100) : 0
     };
   }
 };
