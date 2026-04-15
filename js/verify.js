@@ -89,3 +89,26 @@ window.TESTS.push(function () {
   ];
   VERIFY.assertApprox('unsorted events sort by answeredAt', Scheduler.calculateStability(unsorted, settings), 2);
 });
+
+// ---- calculateRetrievability ----
+window.TESTS.push(function () {
+  VERIFY.group('calculateRetrievability');
+  const now = Date.now();
+  const day = 86400000;
+
+  // Just reviewed: t=0 → R=1
+  VERIFY.assertApprox('t=0 → R=1',
+    Scheduler.calculateRetrievability(5, now, now), 1.0);
+
+  // t = S → R = 1/e ≈ 0.3679
+  VERIFY.assertApprox('t=S → R≈0.368',
+    Scheduler.calculateRetrievability(5, now - 5 * day, now), Math.exp(-1), 1e-6);
+
+  // t = 3S → R = e^-3 ≈ 0.0498
+  VERIFY.assertApprox('t=3S → R≈0.050',
+    Scheduler.calculateRetrievability(5, now - 15 * day, now), Math.exp(-3), 1e-6);
+
+  // Never-reviewed (lastReviewedAt null) → 0 (treat as maximally forgotten for ranking)
+  VERIFY.assertApprox('null lastReviewedAt → R=0',
+    Scheduler.calculateRetrievability(1, null, now), 0);
+});
