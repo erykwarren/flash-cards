@@ -112,3 +112,49 @@ window.TESTS.push(function () {
   VERIFY.assertApprox('null lastReviewedAt → R=0',
     Scheduler.calculateRetrievability(1, null, now), 0);
 });
+
+// ---- getCardStats integration ----
+window.TESTS.push(function () {
+  VERIFY.group('getCardStats integration');
+
+  // Seed localStorage with settings + a fake review sequence for a synthetic card.
+  // We don't touch the real DECKS/CARDS collections; we write REVIEWS directly
+  // and read them back through ReviewStorage.getCardStats.
+  const originalSettings = localStorage.getItem('flashcards_settings');
+  const originalReviews = localStorage.getItem('flashcards_reviews');
+
+  try {
+    SettingsStorage.reset();
+
+    const cardId = '__verify_card__';
+    const deckId = '__verify_deck__';
+    const day = 86400000;
+    const t0 = Date.now() - 10 * day;
+
+    const synthetic = [
+      { id: 'r1', cardId, deckId, startedAt: new Date(t0).toISOString(),
+        answeredAt: new Date(t0).toISOString(), durationMs: 1000, outcome: 'correct' },
+      { id: 'r2', cardId, deckId, startedAt: new Date(t0 + day).toISOString(),
+        answeredAt: new Date(t0 + day).toISOString(), durationMs: 1000, outcome: 'correct' },
+      { id: 'r3', cardId, deckId, startedAt: new Date(t0 + 2 * day).toISOString(),
+        answeredAt: new Date(t0 + 2 * day).toISOString(), durationMs: 1000, outcome: 'incorrect' }
+    ];
+    localStorage.setItem('flashcards_reviews', JSON.stringify(synthetic));
+
+    const stats = ReviewStorage.getCardStats(cardId);
+    VERIFY.assertEqual('totalReviews = 3', stats.totalReviews, 3);
+    VERIFY.assertApprox('stability = 2 (1→2→4→2)', stats.stability, 2);
+    VERIFY.assertEqual('lastReviewedAt matches last event', stats.lastReviewedAt, t0 + 2 * day);
+    VERIFY.assertEqual('streak = 0 (last was incorrect)', stats.streak, 0);
+
+    // Empty history yields initialStability
+    const emptyStats = ReviewStorage.getCardStats('__nonexistent__');
+    VERIFY.assertApprox('empty history → stability = S₀', emptyStats.stability, 1.0);
+    VERIFY.assertEqual('empty history → lastReviewedAt null', emptyStats.lastReviewedAt, null);
+  } finally {
+    if (originalSettings === null) localStorage.removeItem('flashcards_settings');
+    else localStorage.setItem('flashcards_settings', originalSettings);
+    if (originalReviews === null) localStorage.removeItem('flashcards_reviews');
+    else localStorage.setItem('flashcards_reviews', originalReviews);
+  }
+});
