@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Flashcards · Verify</title>
+  <style>
+    body { font-family: monospace; padding: 1rem; background: #1a1a2e; color: #e8e8e8; }
+    .pass { color: #00ff9d; }
+    .fail { color: #ff6b6b; }
+    .group { margin-top: 1rem; font-weight: bold; color: #00d4ff; }
+    pre { margin: 0.1rem 0 0.1rem 1rem; }
+  </style>
+</head>
+<body>
+  <h1>Scheduler Verification</h1>
+  <div id="results"></div>
+  <script>
+    window.APP_VERSION = 'verify';
+    window.APP_BUILD_TIME = 'verify';
+  </script>
+  <script src="js/storage.js"></script>
+  <script src="js/scheduler.js"></script>
+  <script src="js/verify.js"></script>
+</body>
+</html>
