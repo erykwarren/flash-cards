@@ -46,165 +46,47 @@ const Scheduler = {
   },
 
   /**
-   * Calculate priority score for a single card
-   * Higher score = higher priority for review
+   * Build a review queue ranked by Ebbinghaus retrievability.
+   * New cards (never reviewed) are treated as maximally due (R=0, priority=1).
+   * Reviewed cards are ranked by ascending R (lowest recall first).
    *
-   * @param {Object} card - The card object
-   * @param {Object} stats - Card statistics from ReviewStorage.getCardStats()
-   * @param {Object} settings - Algorithm settings from SettingsStorage.get()
-   * @returns {number} Priority score
-   */
-  calculatePriority(card, stats, settings) {
-    // Base score components
-    const {
-      failureWeight = 3.0,
-      recencyWeight = 2.0,
-      exposureWeight = 1.5,
-      targetExposures = 7,
-      maxRecencyDays = 30,
-      recentPenaltyMinutes = 10
-    } = settings;
-
-    // 1. Failure rate component
-    // Cards with higher failure rate get priority
-    let failureRate;
-    if (stats.totalReviews === 0) {
-      // New cards get a neutral failure rate (slight boost)
-      failureRate = 0.5;
-    } else {
-      failureRate = stats.incorrect / stats.totalReviews;
-    }
-    const failureScore = failureWeight * failureRate;
-
-    // 2. Recency component
-    // Cards not seen recently get priority
-    let daysSinceLastSeen;
-    if (stats.lastSeenAt === null) {
-      // Never seen cards get max recency
-      daysSinceLastSeen = maxRecencyDays;
-    } else {
-      const msSinceLastSeen = Date.now() - stats.lastSeenAt;
-      daysSinceLastSeen = msSinceLastSeen / (1000 * 60 * 60 * 24);
-    }
-    const recencyScore = recencyWeight * Math.min(daysSinceLastSeen / maxRecencyDays, 1);
-
-    // 3. Exposure gap component
-    // Cards with fewer reviews than target get priority
-    const exposureGap = Math.max(0, targetExposures - stats.totalReviews) / targetExposures;
-    const exposureScore = exposureWeight * exposureGap;
-
-    // 4. Recent penalty component
-    // Penalize cards seen very recently (avoid immediate repetition)
-    let recentPenalty = 0;
-    if (stats.lastSeenAt !== null) {
-      const minutesSinceLastSeen = (Date.now() - stats.lastSeenAt) / (1000 * 60);
-      if (minutesSinceLastSeen < recentPenaltyMinutes) {
-        // Strong penalty for very recent cards (exponential decay)
-        recentPenalty = 5.0 * (1 - minutesSinceLastSeen / recentPenaltyMinutes);
-      }
-    }
-
-    // 5. Streak penalty (optional)
-    // Cards with long correct streaks get slightly lower priority
-    const streakPenalty = Math.min(stats.streak * 0.1, 0.5);
-
-    // Calculate final score
-    const score = failureScore + recencyScore + exposureScore - recentPenalty - streakPenalty;
-
-    return Math.max(0, score); // Ensure non-negative
-  },
-
-  /**
-   * Calculate priority scores for all cards in a deck
-   * 
-   * @param {string} deckId - Deck ID
-   * @returns {Array<{card: Object, stats: Object, priority: number}>}
-   */
-  calculateAllPriorities(deckId) {
-    const cards = CardStorage.getByDeck(deckId);
-    const settings = SettingsStorage.get();
-    
-    return cards.map(card => {
-      const stats = ReviewStorage.getCardStats(card.id);
-      const priority = this.calculatePriority(card, stats, settings);
-      return { card, stats, priority };
-    });
-  },
-
-  /**
-   * Build a review queue using weighted random selection
-   * Prioritizes high-priority cards but adds variety
-   * 
    * @param {string} deckId - Deck ID
    * @param {number} maxCards - Maximum cards to include (default: all)
-   * @returns {Array<Object>} Ordered array of cards to review
+   * @returns {Array<Object>} Ordered array of card objects to review
    */
   buildQueue(deckId, maxCards = Infinity) {
+    const cards = CardStorage.getByDeck(deckId);
+    if (cards.length === 0) return [];
+
     const settings = SettingsStorage.get();
-    const prioritized = this.calculateAllPriorities(deckId);
-    
-    if (prioritized.length === 0) {
-      return [];
-    }
+    const now = Date.now();
 
-    // Separate new cards (never seen) from reviewed cards
-    const newCards = prioritized.filter(p => p.stats.totalReviews === 0);
-    const reviewedCards = prioritized.filter(p => p.stats.totalReviews > 0);
+    const newCards = [];
+    const reviewedCards = [];
 
-    // Limit new cards per session
-    const newCardsLimit = settings.newCardsPerSession || 5;
-    const selectedNew = this.weightedSelect(newCards, Math.min(newCardsLimit, newCards.length));
-
-    // Select from reviewed cards
-    const remainingSlots = Math.max(0, maxCards - selectedNew.length);
-    const selectedReviewed = this.weightedSelect(reviewedCards, Math.min(remainingSlots, reviewedCards.length));
-
-    // Combine and shuffle slightly for variety
-    const queue = [...selectedNew, ...selectedReviewed];
-    
-    // Shuffle with priority bias (high priority cards tend to come earlier)
-    return this.priorityShuffle(queue);
-  },
-
-  /**
-   * Select cards using weighted random selection based on priority
-   * Higher priority cards are more likely to be selected
-   * 
-   * @param {Array} prioritized - Array of {card, stats, priority} objects
-   * @param {number} count - Number of cards to select
-   * @returns {Array} Selected cards
-   */
-  weightedSelect(prioritized, count) {
-    if (prioritized.length === 0 || count <= 0) {
-      return [];
-    }
-
-    // Make a copy to avoid mutating original
-    const remaining = [...prioritized];
-    const selected = [];
-
-    while (selected.length < count && remaining.length > 0) {
-      // Calculate total weight
-      const totalWeight = remaining.reduce((sum, p) => sum + Math.max(p.priority, 0.1), 0);
-      
-      // Random selection
-      let random = Math.random() * totalWeight;
-      let selectedIndex = 0;
-      
-      for (let i = 0; i < remaining.length; i++) {
-        random -= Math.max(remaining[i].priority, 0.1);
-        if (random <= 0) {
-          selectedIndex = i;
-          break;
-        }
+    for (const card of cards) {
+      const stats = ReviewStorage.getCardStats(card.id);
+      if (stats.totalReviews === 0) {
+        newCards.push({ card, stats, priority: 1 });
+      } else {
+        const R = this.calculateRetrievability(stats.stability, stats.lastReviewedAt, now);
+        reviewedCards.push({ card, stats, priority: 1 - R });
       }
-
-      // Add to selected and remove from remaining
-      selected.push(remaining[selectedIndex]);
-      remaining.splice(selectedIndex, 1);
     }
 
-    return selected;
+    // Sort reviewed cards by priority descending (lowest R first)
+    reviewedCards.sort((a, b) => b.priority - a.priority);
+
+    // Cap new cards per session (insertion order)
+    const newCardsLimit = settings.newCardsPerSession || 5;
+    const selectedNew = newCards.slice(0, newCardsLimit);
+
+    // Fill remaining slots from ranked reviewed cards
+    const remainingSlots = Math.max(0, maxCards - selectedNew.length);
+    const selectedReviewed = reviewedCards.slice(0, remainingSlots);
+
+    const combined = [...selectedNew, ...selectedReviewed];
+    return this.priorityShuffle(combined);
   },
 
   /**
