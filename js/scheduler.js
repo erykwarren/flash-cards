@@ -4,7 +4,32 @@
  */
 
 const Scheduler = {
-  
+
+  /**
+   * Fold a card's review events into a final stability value.
+   * Sorts defensively by answeredAt, then applies S *= a on correct,
+   * S *= b on incorrect, clamping to minStability.
+   *
+   * @param {Array<{outcome: string, answeredAt: string}>} reviews
+   * @param {Object} settings - Must include successMultiplier, failureMultiplier, initialStability, minStability
+   * @returns {number} final stability in days
+   */
+  calculateStability(reviews, settings) {
+    const a = settings.successMultiplier;
+    const b = settings.failureMultiplier;
+    const floor = settings.minStability;
+    let S = settings.initialStability;
+
+    const sorted = [...reviews].sort(
+      (x, y) => new Date(x.answeredAt) - new Date(y.answeredAt)
+    );
+
+    for (const r of sorted) {
+      S = Math.max(floor, S * (r.outcome === 'correct' ? a : b));
+    }
+    return S;
+  },
+
   /**
    * Calculate priority score for a single card
    * Higher score = higher priority for review
