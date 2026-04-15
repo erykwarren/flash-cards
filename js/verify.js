@@ -54,3 +54,38 @@
 
   window.TESTS = [];
 })();
+
+// ---- calculateStability ----
+window.TESTS.push(function () {
+  VERIFY.group('calculateStability');
+  const settings = { successMultiplier: 2.0, failureMultiplier: 0.5, initialStability: 1.0, minStability: 0.5 };
+
+  const mkReview = (outcome, t) => ({ outcome, answeredAt: new Date(t).toISOString() });
+
+  // Five consecutive corrects: 1 -> 2 -> 4 -> 8 -> 16 -> 32
+  const fiveCorrects = [1, 2, 3, 4, 5].map(day => mkReview('correct', day * 86400000));
+  VERIFY.assertApprox('five corrects → S = 32', Scheduler.calculateStability(fiveCorrects, settings), 32);
+
+  // Two corrects then one incorrect: 1 -> 2 -> 4 -> 2
+  const twoCorrectsOneFail = [
+    mkReview('correct', 86400000),
+    mkReview('correct', 2 * 86400000),
+    mkReview('incorrect', 3 * 86400000)
+  ];
+  VERIFY.assertApprox('correct, correct, incorrect → S = 2', Scheduler.calculateStability(twoCorrectsOneFail, settings), 2);
+
+  // Empty history → S₀
+  VERIFY.assertApprox('no reviews → S = S₀ (1.0)', Scheduler.calculateStability([], settings), 1.0);
+
+  // Floor clamp: three incorrects starting from 1.0 would be 0.5, 0.25, 0.125 — clamps to 0.5
+  const threeFails = [1, 2, 3].map(day => mkReview('incorrect', day * 86400000));
+  VERIFY.assertApprox('three incorrects clamp at S_min = 0.5', Scheduler.calculateStability(threeFails, settings), 0.5);
+
+  // Unsorted input must be sorted by answeredAt before folding
+  const unsorted = [
+    mkReview('incorrect', 3 * 86400000), // applied last: 4 * 0.5 = 2
+    mkReview('correct', 86400000),       // applied first: 1 * 2 = 2
+    mkReview('correct', 2 * 86400000),   // applied second: 2 * 2 = 4
+  ];
+  VERIFY.assertApprox('unsorted events sort by answeredAt', Scheduler.calculateStability(unsorted, settings), 2);
+});
