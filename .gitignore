@@ -29,3 +29,6 @@ version.js
 # Cursor AI
 .cursor/
 
+# Playwright MCP test artifacts
+.playwright-mcp/
+

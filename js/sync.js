@@ -1,57 +1,47 @@
 /**
  * Sync Module
- * Handles synchronization between Google Sheets and local storage
+ * Handles synchronization between a public Google Sheet (via CSV export) and local storage.
  */
 
 const SyncService = {
-  
+
   /**
-   * Sync a deck with its source spreadsheet
-   * @param {string} deckId - The deck ID to sync
+   * Sync a deck with its source sheet.
+   * @param {string} deckId
    * @returns {Promise<{success: boolean, message: string, stats?: Object}>}
    */
   async syncDeck(deckId) {
     const deck = DeckStorage.getById(deckId);
-    
+
     if (!deck) {
       return { success: false, message: 'Deck not found' };
     }
 
-    if (!deck.spreadsheetId) {
+    if (!deck.csvUrl) {
       return { success: false, message: 'This deck is not linked to a spreadsheet' };
-    }
-
-    // Check if authenticated
-    const accessToken = GoogleAuth.getAccessToken();
-    if (!accessToken) {
-      return { success: false, message: 'Not authenticated. Please sign in again.' };
     }
 
     Alpine.store('app').setLoading(true);
 
     try {
-      // Read spreadsheet data
-      const result = await SheetsService.readSpreadsheet(deck.spreadsheetId);
-      
+      const result = await SheetsService.fetchCsv(deck.csvUrl);
+
       if (!result.success) {
         return { success: false, message: result.error };
       }
 
-      // Sync cards with local storage
       const syncStats = await CardStorage.syncCards(deck.id, result.cards);
-      
-      // Update deck metadata
+
       DeckStorage.update(deck.id, {
         lastSyncedAt: new Date().toISOString()
       });
 
-      // Reload app data
       Alpine.store('app').loadDecks();
-      
+
       const message = `Synced successfully! ${syncStats.created} new, ${syncStats.updated} updated, ${syncStats.archived} archived.`;
-      
-      return { 
-        success: true, 
+
+      return {
+        success: true,
         message,
         stats: {
           totalCards: result.cards.length,
@@ -68,44 +58,38 @@ const SyncService = {
   },
 
   /**
-   * Sync all decks that are linked to spreadsheets
-   * @returns {Promise<{success: boolean, results: Array}>}
+   * Sync all decks that have a csvUrl. Runs on app load.
+   * Failures per-deck are logged but do not abort the batch.
    */
   async syncAllDecks() {
-    const decks = DeckStorage.getAll().filter(d => d.spreadsheetId);
-    
+    const decks = DeckStorage.getAll().filter(d => d.csvUrl);
+
     if (decks.length === 0) {
       return { success: true, results: [] };
     }
 
-    const results = [];
-    
-    for (const deck of decks) {
-      const result = await this.syncDeck(deck.id);
-      results.push({
-        deckId: deck.id,
-        deckName: deck.name,
-        ...result
-      });
-    }
+    const results = await Promise.all(
+      decks.map(async deck => {
+        const r = await this.syncDeck(deck.id);
+        return { deckId: deck.id, deckName: deck.name, ...r };
+      })
+    );
 
     const allSuccess = results.every(r => r.success);
     return { success: allSuccess, results };
   },
 
   /**
-   * Get sync status for a deck
-   * @param {string} deckId - The deck ID
-   * @returns {Object} Sync status info
+   * Sync status for the deck list UI. Unchanged shape from the prior auth-based flow.
    */
   getSyncStatus(deckId) {
     const deck = DeckStorage.getById(deckId);
-    
+
     if (!deck) {
       return { status: 'unknown', message: 'Deck not found' };
     }
 
-    if (!deck.spreadsheetId) {
+    if (!deck.csvUrl) {
       return { status: 'local', message: 'Local deck (not synced)' };
     }
 
@@ -127,53 +111,23 @@ const SyncService = {
     }
   },
 
-  /**
-   * Check if we're online
-   * @returns {boolean}
-   */
   isOnline() {
     return navigator.onLine;
-  },
-
-  /**
-   * Auto-sync on app start (if online and authenticated)
-   */
-  async autoSync() {
-    if (!this.isOnline()) {
-      console.log('Offline - skipping auto-sync');
-      return;
-    }
-
-    if (!GoogleAuth.getAccessToken()) {
-      console.log('Not authenticated - skipping auto-sync');
-      return;
-    }
-
-    const decks = DeckStorage.getAll().filter(d => d.spreadsheetId);
-    
-    for (const deck of decks) {
-      const status = this.getSyncStatus(deck.id);
-      
-      // Only auto-sync if last sync was more than 1 hour ago
-      if (status.status === 'stale' || status.status === 'never') {
-        console.log(`Auto-syncing deck: ${deck.name}`);
-        await this.syncDeck(deck.id);
-      }
-    }
   }
 };
 
-// Export
 window.SyncService = SyncService;
 
-// Listen for online/offline events
 window.addEventListener('online', () => {
   console.log('Back online');
-  Alpine.store('app').showSuccess('Back online');
+  if (window.Alpine && Alpine.store('app')) {
+    Alpine.store('app').showSuccess('Back online');
+  }
 });
 
 window.addEventListener('offline', () => {
   console.log('Gone offline');
-  Alpine.store('app').showError('You are offline. Changes will sync when you reconnect.');
+  if (window.Alpine && Alpine.store('app')) {
+    Alpine.store('app').showError('You are offline. Cached cards are still available.');
+  }
 });
-

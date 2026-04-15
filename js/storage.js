@@ -7,8 +7,7 @@ const STORAGE_KEYS = {
   DECKS: 'flashcards_decks',
   CARDS: 'flashcards_cards',
   REVIEWS: 'flashcards_reviews',
-  SETTINGS: 'flashcards_settings',
-  AUTH: 'flashcards_auth'
+  SETTINGS: 'flashcards_settings'
 };
 
 const DEFAULT_SETTINGS = {
@@ -117,7 +116,8 @@ const DeckStorage = {
       id: generateId('deck'),
       name: deck.name || 'Untitled Deck',
       spreadsheetId: deck.spreadsheetId || null,
-      spreadsheetName: deck.spreadsheetName || null,
+      gid: deck.gid || null,
+      csvUrl: deck.csvUrl || null,
       lastSyncedAt: null,
       createdAt: new Date().toISOString(),
       ...deck
@@ -407,30 +407,12 @@ const SettingsStorage = {
   }
 };
 
-/**
- * Auth token storage
- */
-const AuthStorage = {
-  getToken() {
-    return Storage.get(STORAGE_KEYS.AUTH, null);
-  },
-
-  setToken(tokenData) {
-    Storage.set(STORAGE_KEYS.AUTH, tokenData);
-  },
-
-  clearToken() {
-    Storage.remove(STORAGE_KEYS.AUTH);
-  }
-};
-
 // Export for use in other modules
 window.Storage = Storage;
 window.DeckStorage = DeckStorage;
 window.CardStorage = CardStorage;
 window.ReviewStorage = ReviewStorage;
 window.SettingsStorage = SettingsStorage;
-window.AuthStorage = AuthStorage;
 window.generateId = generateId;
 window.generateCardId = generateCardId;
 

@@ -43,9 +43,16 @@
 
   window.VERIFY = { group, assert, assertEqual, assertApprox };
 
-  // Test cases get appended below by later tasks.
-  window.addEventListener('load', () => {
-    (window.TESTS || []).forEach(fn => fn());
+  // Test cases get appended below by later tasks. Runner awaits async test fns.
+  window.addEventListener('load', async () => {
+    for (const fn of (window.TESTS || [])) {
+      try {
+        await fn();
+      } catch (err) {
+        failed++;
+        render('fail', `  FAIL  test threw — ${err && err.message}`);
+      }
+    }
     const summary = document.createElement('h2');
     summary.textContent = `${passed} passed, ${failed} failed`;
     summary.className = failed === 0 ? 'pass' : 'fail';
@@ -238,6 +245,157 @@ window.TESTS.push(function () {
     else localStorage.setItem('flashcards_reviews', originalReviews);
     if (originalCards === null) localStorage.removeItem('flashcards_cards');
     else localStorage.setItem('flashcards_cards', originalCards);
+    if (originalDecks === null) localStorage.removeItem('flashcards_decks');
+    else localStorage.setItem('flashcards_decks', originalDecks);
+  }
+});
+
+// ---- SheetsService.parseCsv ----
+// Note: test cells are chosen to not contain header keywords (q, a, question,
+// answer, front, back, term, definition) so isHeaderRow doesn't misclassify
+// data rows as headers.
+window.TESTS.push(function () {
+  VERIFY.group('parseCsv');
+
+  // Plain three-column rows
+  const plain = SheetsService.parseCsv('hello,world,exfirst\nfoo,blue,exsecond\n');
+  VERIFY.assertEqual('plain CSV → 2 cards', plain.length, 2);
+  VERIFY.assertEqual('plain CSV → card[0].question', plain[0].question, 'hello');
+  VERIFY.assertEqual('plain CSV → card[1].example', plain[1].example, 'exsecond');
+
+  // Header row auto-skipped
+  const withHeader = SheetsService.parseCsv('Question,Answer,Example\nhello,world,exfirst\n');
+  VERIFY.assertEqual('header row skipped → 1 card', withHeader.length, 1);
+  VERIFY.assertEqual('header row skipped → question value', withHeader[0].question, 'hello');
+
+  // Quoted field with comma
+  const withComma = SheetsService.parseCsv('"hello, world",blue,ex\n');
+  VERIFY.assertEqual('quoted comma preserved', withComma[0].question, 'hello, world');
+
+  // Escaped "" inside quoted field
+  const withQuote = SheetsService.parseCsv('"hello ""world""",blue,ex\n');
+  VERIFY.assertEqual('escaped "" produces literal quote', withQuote[0].question, 'hello "world"');
+
+  // Embedded newline inside quoted field
+  const withNewline = SheetsService.parseCsv('"line1\nline2",blue,ex\n');
+  VERIFY.assertEqual('embedded newline inside quotes', withNewline[0].question, 'line1\nline2');
+
+  // \r\n line terminator
+  const crlf = SheetsService.parseCsv('hello,world,exfirst\r\nfoo,blue,exsecond\r\n');
+  VERIFY.assertEqual('\\r\\n terminator → 2 cards', crlf.length, 2);
+
+  // Trailing blank rows stripped
+  const trailing = SheetsService.parseCsv('hello,world,exfirst\n\n\n');
+  VERIFY.assertEqual('trailing blank rows stripped', trailing.length, 1);
+
+  // Missing third column → example is ''
+  const noExample = SheetsService.parseCsv('hello,world\n');
+  VERIFY.assertEqual('missing example column → empty string', noExample[0].example, '');
+});
+
+// ---- SheetsService.parseSheetUrl ----
+window.TESTS.push(function () {
+  VERIFY.group('parseSheetUrl');
+
+  const full = SheetsService.parseSheetUrl(
+    'https://docs.google.com/spreadsheets/d/ABC123/edit#gid=456'
+  );
+  VERIFY.assertEqual('standard URL → spreadsheetId', full && full.spreadsheetId, 'ABC123');
+  VERIFY.assertEqual('standard URL → gid', full && full.gid, '456');
+
+  const noGid = SheetsService.parseSheetUrl(
+    'https://docs.google.com/spreadsheets/d/XYZ789/edit'
+  );
+  VERIFY.assertEqual('no gid → default "0"', noGid && noGid.gid, '0');
+
+  const withQuery = SheetsService.parseSheetUrl(
+    'https://docs.google.com/spreadsheets/d/QRY111/edit?usp=sharing#gid=42'
+  );
+  VERIFY.assertEqual('URL with query params → gid', withQuery && withQuery.gid, '42');
+
+  VERIFY.assertEqual('non-Sheets URL → null',
+    SheetsService.parseSheetUrl('https://example.com/somewhere'), null);
+
+  VERIFY.assertEqual('bare ID → null',
+    SheetsService.parseSheetUrl('ABC123'), null);
+});
+
+// ---- CardStorage.syncCards round-trips ----
+window.TESTS.push(async function () {
+  VERIFY.group('syncCards round-trips');
+
+  const originalCards = localStorage.getItem('flashcards_cards');
+  const originalReviews = localStorage.getItem('flashcards_reviews');
+  const originalDecks = localStorage.getItem('flashcards_decks');
+
+  try {
+    const deckId = '__verify_sync_deck__';
+    // Start from a clean slate for the three collections we touch.
+    localStorage.setItem('flashcards_cards', JSON.stringify([]));
+    localStorage.setItem('flashcards_reviews', JSON.stringify([]));
+    localStorage.setItem('flashcards_decks', JSON.stringify([]));
+
+    // Initial sync: 3 rows
+    const initial = [
+      { question: 'q1', answer: 'a1', example: 'e1' },
+      { question: 'q2', answer: 'a2', example: 'e2' },
+      { question: 'q3', answer: 'a3', example: 'e3' }
+    ];
+    const r1 = await CardStorage.syncCards(deckId, initial);
+    VERIFY.assertEqual('initial sync creates 3', r1.created, 3);
+
+    // Capture q2's id so we can attach a review to it and verify log preservation
+    const q2Id = await generateCardId(deckId, 'q2', 'a2');
+    const fakeReview = {
+      id: 'rev_q2',
+      cardId: q2Id,
+      deckId,
+      startedAt: new Date().toISOString(),
+      answeredAt: new Date().toISOString(),
+      durationMs: 1000,
+      outcome: 'correct'
+    };
+    localStorage.setItem('flashcards_reviews', JSON.stringify([fakeReview]));
+
+    // Re-sync with one row added (q1, q2, q3 still present + q4 new)
+    const added = [
+      ...initial,
+      { question: 'q4', answer: 'a4', example: '' }
+    ];
+    const r2 = await CardStorage.syncCards(deckId, added);
+    VERIFY.assertEqual('added row → creates 1', r2.created, 1);
+    VERIFY.assertEqual('added row → archives 0', r2.archived, 0);
+
+    // Re-sync with q2 removed → should archive exactly 1
+    const removed = initial.filter(r => r.question !== 'q2').concat([
+      { question: 'q4', answer: 'a4', example: '' }
+    ]);
+    const r3 = await CardStorage.syncCards(deckId, removed);
+    VERIFY.assertEqual('removed row → archives 1', r3.archived, 1);
+
+    // Review events for archived q2 are still readable from the log
+    const q2Reviews = ReviewStorage.getByCard(q2Id);
+    VERIFY.assertEqual('archived card\'s review log preserved', q2Reviews.length, 1);
+
+    // Edit q1's question text → old q1 archived, new card with different id created
+    const edited = [
+      { question: 'q1_edited', answer: 'a1', example: 'e1' },
+      ...removed.filter(r => r.question !== 'q1')
+    ];
+    const oldQ1Id = await generateCardId(deckId, 'q1', 'a1');
+    const newQ1Id = await generateCardId(deckId, 'q1_edited', 'a1');
+    VERIFY.assert('edited text produces different id', oldQ1Id !== newQ1Id);
+    await CardStorage.syncCards(deckId, edited);
+    const oldQ1 = CardStorage.getById(oldQ1Id);
+    const newQ1 = CardStorage.getById(newQ1Id);
+    VERIFY.assert('old card archived after edit', oldQ1 && oldQ1.isArchived === true);
+    VERIFY.assert('new card created after edit, not archived',
+      newQ1 && newQ1.isArchived === false);
+  } finally {
+    if (originalCards === null) localStorage.removeItem('flashcards_cards');
+    else localStorage.setItem('flashcards_cards', originalCards);
+    if (originalReviews === null) localStorage.removeItem('flashcards_reviews');
+    else localStorage.setItem('flashcards_reviews', originalReviews);
     if (originalDecks === null) localStorage.removeItem('flashcards_decks');
     else localStorage.setItem('flashcards_decks', originalDecks);
   }

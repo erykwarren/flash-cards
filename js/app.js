@@ -6,43 +6,64 @@
 console.log(`Flashcards App [${window.APP_VERSION || 'dev'}] - ${window.APP_BUILD_TIME || 'unknown build time'}`);
 
 document.addEventListener('alpine:init', () => {
-  
+
   /**
    * Main application store
    * Manages global state, navigation, and data
    */
   Alpine.store('app', {
-    // Current view: 'home' | 'session' | 'stats' | 'settings' | 'picker' | 'login'
+    // Current view: 'home' | 'session' | 'stats' | 'settings' | 'add-deck'
     currentView: 'home',
-    
+
     // Currently selected deck
     currentDeck: null,
-    
+
     // All decks
     decks: [],
-    
+
     // Loading state
     isLoading: false,
-    
+
     // Error message
     error: null,
-    
+
     // Success message
     success: null,
-    
-    // Is user authenticated with Google
-    isAuthenticated: false,
-    
-    // User info from Google
-    user: null,
 
     /**
      * Initialize the app
      */
     init() {
+      this.migrateLegacyDecks();
       this.loadDecks();
-      this.checkAuth();
+      // Background-sync all decks so new rows appear without a manual action.
+      // Failures are per-deck and leave cached cards in place.
+      SyncService.syncAllDecks().catch(err => console.warn('syncAllDecks failed:', err));
       console.log('Flashcards app initialized');
+    },
+
+    /**
+     * One-time migration: decks that were linked via the old OAuth flow have
+     * spreadsheetId but no csvUrl. Build csvUrl from spreadsheetId with gid=0.
+     * If the sheet isn't public, the first fetch will fail and the user will
+     * see an error on that deck — which is the intended surfacing.
+     */
+    migrateLegacyDecks() {
+      const decks = DeckStorage.getAll();
+      let migrated = 0;
+      for (const deck of decks) {
+        if (!deck.csvUrl && deck.spreadsheetId) {
+          const gid = deck.gid || '0';
+          DeckStorage.update(deck.id, {
+            gid,
+            csvUrl: SheetsService.buildCsvUrl(deck.spreadsheetId, gid)
+          });
+          migrated++;
+        }
+      }
+      if (migrated > 0) {
+        console.log(`Migrated ${migrated} legacy deck(s) to csvUrl`);
+      }
     },
 
     /**
@@ -53,6 +74,10 @@ document.addEventListener('alpine:init', () => {
       // Auto-select first deck if exists and none selected
       if (this.decks.length > 0 && !this.currentDeck) {
         this.selectDeck(this.decks[0].id);
+      } else if (this.currentDeck) {
+        // Refresh currentDeck reference so lastSyncedAt updates propagate
+        const fresh = DeckStorage.getById(this.currentDeck.id);
+        if (fresh) this.currentDeck = fresh;
       }
     },
 
@@ -69,17 +94,6 @@ document.addEventListener('alpine:init', () => {
     navigate(view) {
       this.currentView = view;
       this.clearMessages();
-    },
-
-    /**
-     * Check if user is authenticated
-     */
-    checkAuth() {
-      const token = AuthStorage.getToken();
-      this.isAuthenticated = !!(token && token.access_token);
-      if (token && token.user) {
-        this.user = token.user;
-      }
     },
 
     /**
@@ -114,21 +128,57 @@ document.addEventListener('alpine:init', () => {
     },
 
     /**
-     * Create a new deck
+     * Add a deck from a pasted Google Sheets URL. Validates, test-fetches,
+     * creates the deck, and runs an immediate sync.
+     * @returns {Promise<{success:boolean, message:string}>}
      */
-    createDeck(name, spreadsheetId = null, spreadsheetName = null) {
-      const deck = DeckStorage.create({
-        name,
-        spreadsheetId,
-        spreadsheetName
-      });
-      this.loadDecks();
-      this.selectDeck(deck.id);
-      return deck;
+    async addDeckFromUrl(name, url) {
+      const trimmedName = (name || '').trim();
+      const parsed = SheetsService.parseSheetUrl(url);
+
+      if (!trimmedName) {
+        return { success: false, message: 'Please enter a deck name.' };
+      }
+      if (!parsed) {
+        return { success: false, message: "That doesn't look like a Google Sheets URL." };
+      }
+
+      const csvUrl = SheetsService.buildCsvUrl(parsed.spreadsheetId, parsed.gid);
+
+      this.setLoading(true);
+      try {
+        const result = await SheetsService.fetchCsv(csvUrl);
+        if (!result.success) {
+          return { success: false, message: result.error };
+        }
+
+        const deck = DeckStorage.create({
+          name: trimmedName,
+          spreadsheetId: parsed.spreadsheetId,
+          gid: parsed.gid,
+          csvUrl
+        });
+
+        const syncStats = await CardStorage.syncCards(deck.id, result.cards);
+        DeckStorage.update(deck.id, { lastSyncedAt: new Date().toISOString() });
+
+        this.loadDecks();
+        this.selectDeck(deck.id);
+
+        return {
+          success: true,
+          message: `Added "${trimmedName}" with ${syncStats.created} cards.`
+        };
+      } catch (err) {
+        console.error('addDeckFromUrl error:', err);
+        return { success: false, message: 'Failed to add deck: ' + err.message };
+      } finally {
+        this.setLoading(false);
+      }
     },
 
     /**
-     * Delete a deck
+     * Delete a deck (archives its cards; review history preserved in log).
      */
     deleteDeck(deckId) {
       DeckStorage.delete(deckId);
@@ -136,23 +186,13 @@ document.addEventListener('alpine:init', () => {
         this.currentDeck = null;
       }
       this.loadDecks();
-    },
-
-    /**
-     * Sign out
-     */
-    signOut() {
-      AuthStorage.clearToken();
-      this.isAuthenticated = false;
-      this.user = null;
-      this.showSuccess('Signed out successfully');
     }
   });
 
   /**
    * Session store
    * Manages flashcard review session state
-   * 
+   *
    * State machine:
    *   SHOWING_QUESTION -> (tap) -> SHOWING_ANSWER
    *   SHOWING_ANSWER -> (button click) -> FLIPPING_BACK
@@ -161,28 +201,28 @@ document.addEventListener('alpine:init', () => {
   Alpine.store('session', {
     // State: 'question' | 'answer' | 'flipping'
     state: 'question',
-    
+
     // Current card being reviewed
     currentCard: null,
-    
+
     // Next card (preloaded during flip animation)
     nextCardData: null,
-    
+
     // Session start time
     sessionStartedAt: null,
-    
+
     // Current card start time
     cardStartedAt: null,
-    
+
     // Cards reviewed in this session
     reviewedCount: 0,
-    
+
     // Correct answers in this session
     correctCount: 0,
-    
+
     // Cards remaining in queue
     queue: [],
-    
+
     // Is session active
     isActive: false,
 
@@ -192,7 +232,7 @@ document.addEventListener('alpine:init', () => {
     start(deckId) {
       const cards = CardStorage.getByDeck(deckId);
       if (cards.length === 0) {
-        Alpine.store('app').showError('No cards in this deck. Sync from Google Sheets first.');
+        Alpine.store('app').showError('No cards in this deck. Add a deck from Settings and refresh.');
         return false;
       }
 
@@ -202,10 +242,10 @@ document.addEventListener('alpine:init', () => {
       this.isActive = true;
       this.state = 'question';
       this.nextCardData = null;
-      
+
       // Use scheduler to build queue
       this.queue = Scheduler.buildQueue(deckId);
-      
+
       if (this.queue.length === 0) {
         Alpine.store('app').showError('No cards to review right now.');
         return false;
@@ -214,7 +254,7 @@ document.addEventListener('alpine:init', () => {
       // Load first card
       this.currentCard = this.queue.shift();
       this.cardStartedAt = Date.now();
-      
+
       Alpine.store('app').navigate('session');
       return true;
     },
@@ -262,17 +302,18 @@ document.addEventListener('alpine:init', () => {
 
       // Preload next card data
       this.nextCardData = this.queue.shift();
-      
+
       // Transition to flipping state (card flips back, but content stays)
       this.state = 'flipping';
-      
+
       // After flip animation completes, swap the card content
+      // (600ms matches the CSS flip animation; changing one requires the other)
       setTimeout(() => {
         this.currentCard = this.nextCardData;
         this.nextCardData = null;
         this.cardStartedAt = Date.now();
         this.state = 'question';
-      }, 600); // Full animation duration
+      }, 600);
     },
 
     /**
@@ -282,7 +323,7 @@ document.addEventListener('alpine:init', () => {
       this.isActive = false;
       this.currentCard = null;
       Alpine.store('app').navigate('home');
-      
+
       if (this.reviewedCount > 0) {
         const rate = Math.round((this.correctCount / this.reviewedCount) * 100);
         Alpine.store('app').showSuccess(
@@ -308,13 +349,13 @@ document.addEventListener('alpine:init', () => {
   Alpine.store('stats', {
     // Current view: 'deck' | 'card'
     view: 'deck',
-    
+
     // Selected card for detail view
     selectedCard: null,
-    
+
     // Deck stats cache
     deckStats: null,
-    
+
     // Card stats cache
     cardStats: [],
 
@@ -335,14 +376,14 @@ document.addEventListener('alpine:init', () => {
         ...card,
         stats: ReviewStorage.getCardStats(card.id)
       }));
-      
+
       // Sort by most needs review (lowest success rate, then by least seen)
       this.cardStats.sort((a, b) => {
-        const aRate = a.stats.totalReviews > 0 
-          ? a.stats.correct / a.stats.totalReviews 
+        const aRate = a.stats.totalReviews > 0
+          ? a.stats.correct / a.stats.totalReviews
           : 0;
-        const bRate = b.stats.totalReviews > 0 
-          ? b.stats.correct / b.stats.totalReviews 
+        const bRate = b.stats.totalReviews > 0
+          ? b.stats.correct / b.stats.totalReviews
           : 0;
         if (aRate !== bRate) return aRate - bRate;
         return a.stats.totalReviews - b.stats.totalReviews;
@@ -404,4 +445,3 @@ document.addEventListener('alpine:init', () => {
 });
 
 // Scheduler is loaded from js/scheduler.js
-
