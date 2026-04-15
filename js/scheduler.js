@@ -31,9 +31,24 @@ const Scheduler = {
   },
 
   /**
+   * Predicted recall probability using R(t) = exp(-t/S).
+   * Returns 0 for never-reviewed cards (so they rank as maximally due).
+   *
+   * @param {number} stability - days
+   * @param {number|null} lastReviewedAt - epoch ms, or null for never-reviewed
+   * @param {number} now - epoch ms
+   * @returns {number} R in [0, 1]
+   */
+  calculateRetrievability(stability, lastReviewedAt, now) {
+    if (lastReviewedAt === null || lastReviewedAt === undefined) return 0;
+    const days = (now - lastReviewedAt) / 86400000;
+    return Math.exp(-days / stability);
+  },
+
+  /**
    * Calculate priority score for a single card
    * Higher score = higher priority for review
-   * 
+   *
    * @param {Object} card - The card object
    * @param {Object} stats - Card statistics from ReviewStorage.getCardStats()
    * @param {Object} settings - Algorithm settings from SettingsStorage.get()
