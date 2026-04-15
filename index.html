@@ -525,68 +525,52 @@
           <div class="surface rounded-xl p-6 space-y-6">
             <h2 class="font-heading text-lg font-semibold">Algorithm Parameters</h2>
             
-            <!-- Failure Weight -->
+            <!-- Success Multiplier (a) -->
             <div>
               <div class="flex justify-between mb-2">
-                <label class="text-text-muted">Failure Weight</label>
-                <span class="font-mono text-accent" x-text="$store.settings.values.failureWeight"></span>
+                <label class="text-text-muted">Success Multiplier</label>
+                <span class="font-mono text-accent" x-text="$store.settings.values.successMultiplier"></span>
               </div>
-              <input 
-                type="range" 
-                min="0" max="5" step="0.5"
+              <input
+                type="range"
+                min="1.1" max="3.0" step="0.1"
                 class="w-full"
-                x-model="$store.settings.values.failureWeight"
-                @change="$store.settings.update('failureWeight', $event.target.value)"
+                x-model="$store.settings.values.successMultiplier"
+                @change="$store.settings.update('successMultiplier', $event.target.value)"
               >
-              <p class="text-xs text-text-muted mt-1">Higher = failed cards appear more often</p>
+              <p class="text-xs text-text-muted mt-1">Higher = correct answers grow intervals faster</p>
             </div>
-            
-            <!-- Recency Weight -->
+
+            <!-- Failure Multiplier (b) -->
             <div>
               <div class="flex justify-between mb-2">
-                <label class="text-text-muted">Recency Weight</label>
-                <span class="font-mono text-accent" x-text="$store.settings.values.recencyWeight"></span>
+                <label class="text-text-muted">Failure Multiplier</label>
+                <span class="font-mono text-accent" x-text="$store.settings.values.failureMultiplier"></span>
               </div>
-              <input 
-                type="range" 
-                min="0" max="5" step="0.5"
+              <input
+                type="range"
+                min="0.1" max="0.9" step="0.05"
                 class="w-full"
-                x-model="$store.settings.values.recencyWeight"
-                @change="$store.settings.update('recencyWeight', $event.target.value)"
+                x-model="$store.settings.values.failureMultiplier"
+                @change="$store.settings.update('failureMultiplier', $event.target.value)"
               >
-              <p class="text-xs text-text-muted mt-1">Higher = old cards resurface faster</p>
+              <p class="text-xs text-text-muted mt-1">Lower = missed cards reset harder</p>
             </div>
-            
-            <!-- Exposure Weight -->
+
+            <!-- Initial Stability (S₀) -->
             <div>
               <div class="flex justify-between mb-2">
-                <label class="text-text-muted">Exposure Weight</label>
-                <span class="font-mono text-accent" x-text="$store.settings.values.exposureWeight"></span>
+                <label class="text-text-muted">Initial Stability (days)</label>
+                <span class="font-mono text-accent" x-text="$store.settings.values.initialStability"></span>
               </div>
-              <input 
-                type="range" 
-                min="0" max="5" step="0.5"
+              <input
+                type="range"
+                min="0.25" max="5.0" step="0.25"
                 class="w-full"
-                x-model="$store.settings.values.exposureWeight"
-                @change="$store.settings.update('exposureWeight', $event.target.value)"
+                x-model="$store.settings.values.initialStability"
+                @change="$store.settings.update('initialStability', $event.target.value)"
               >
-              <p class="text-xs text-text-muted mt-1">Higher = prioritize under-reviewed cards</p>
-            </div>
-            
-            <!-- Target Exposures -->
-            <div>
-              <div class="flex justify-between mb-2">
-                <label class="text-text-muted">Target Exposures</label>
-                <span class="font-mono text-accent" x-text="$store.settings.values.targetExposures"></span>
-              </div>
-              <input 
-                type="range" 
-                min="3" max="15" step="1"
-                class="w-full"
-                x-model="$store.settings.values.targetExposures"
-                @change="$store.settings.update('targetExposures', $event.target.value)"
-              >
-              <p class="text-xs text-text-muted mt-1">Minimum reviews per card</p>
+              <p class="text-xs text-text-muted mt-1">Days before a new card becomes due</p>
             </div>
             
             <!-- New Cards Per Session -->
