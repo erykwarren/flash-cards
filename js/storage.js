@@ -12,13 +12,11 @@ const STORAGE_KEYS = {
 };
 
 const DEFAULT_SETTINGS = {
-  failureWeight: 3.0,
-  recencyWeight: 2.0,
-  exposureWeight: 1.5,
-  targetExposures: 7,
-  maxRecencyDays: 30,
-  recentPenaltyMinutes: 10,
-  newCardsPerSession: 5
+  successMultiplier: 2.0,     // S grows by this factor on correct
+  failureMultiplier: 0.5,     // S shrinks by this factor on incorrect
+  initialStability: 1.0,      // days; S for first review
+  minStability: 0.5,          // days; floor so S never collapses
+  newCardsPerSession: 5       // cap on brand-new cards per session
 };
 
 /**
@@ -312,42 +310,46 @@ const ReviewStorage = {
    */
   getCardStats(cardId) {
     const reviews = this.getByCard(cardId);
+    const settings = SettingsStorage.get();
+
     if (reviews.length === 0) {
       return {
         totalReviews: 0,
         correct: 0,
         incorrect: 0,
         lastSeenAt: null,
+        lastReviewedAt: null,
         avgDurationMs: 0,
-        streak: 0
+        streak: 0,
+        stability: settings.initialStability
       };
     }
 
     const correct = reviews.filter(r => r.outcome === 'correct').length;
     const incorrect = reviews.length - correct;
-    const sorted = [...reviews].sort((a, b) => 
-      new Date(b.answeredAt) - new Date(a.answeredAt)
+    const sorted = [...reviews].sort(
+      (a, b) => new Date(b.answeredAt) - new Date(a.answeredAt)
     );
     const lastSeenAt = new Date(sorted[0].answeredAt).getTime();
     const avgDurationMs = reviews.reduce((sum, r) => sum + r.durationMs, 0) / reviews.length;
 
-    // Calculate current streak
     let streak = 0;
     for (const review of sorted) {
-      if (review.outcome === 'correct') {
-        streak++;
-      } else {
-        break;
-      }
+      if (review.outcome === 'correct') streak++;
+      else break;
     }
+
+    const stability = Scheduler.calculateStability(reviews, settings);
 
     return {
       totalReviews: reviews.length,
       correct,
       incorrect,
       lastSeenAt,
+      lastReviewedAt: lastSeenAt,
       avgDurationMs: Math.round(avgDurationMs),
-      streak
+      streak,
+      stability
     };
   },
 
