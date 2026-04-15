@@ -202,17 +202,18 @@ window.TESTS.push(function () {
     const queue = Scheduler.buildQueue(deckId, 10);
     VERIFY.assertEqual('queue length = 5 (3 reviewed + 2 new, cap 2 new)', queue.length, 5);
 
-    // First reviewed card in the queue must be c_low_R (priorityShuffle may nudge it by one,
-    // so check it's in the first 2 positions)
-    const firstTwoIds = queue.slice(0, 2).map(c => c.id);
-    VERIFY.assert('c_low_R appears in first 2 positions',
-      firstTwoIds.includes('c_low_R'),
-      `got ${firstTwoIds.join(', ')}`);
+    // c_low_R (reviewed 20d ago, R≈0) and the two new cards (R=0) all share top priority.
+    // priorityShuffle sort is stable on ties, so all three land in the first 3 positions
+    // in some order.
+    const firstThreeIds = queue.slice(0, 3).map(c => c.id);
+    VERIFY.assert('c_low_R appears in first 3 positions',
+      firstThreeIds.includes('c_low_R'),
+      `got ${firstThreeIds.join(', ')}`);
 
-    // c_high_R (just-reviewed) should NOT be in first 2
-    VERIFY.assert('c_high_R not in first 2 positions',
-      !firstTwoIds.includes('c_high_R'),
-      `got ${firstTwoIds.join(', ')}`);
+    // c_high_R (just-reviewed) should NOT be in first 3
+    VERIFY.assert('c_high_R not in first 3 positions',
+      !firstThreeIds.includes('c_high_R'),
+      `got ${firstThreeIds.join(', ')}`);
 
     // All 5 distinct cards present
     const idSet = new Set(queue.map(c => c.id));
