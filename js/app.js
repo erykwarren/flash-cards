@@ -202,6 +202,9 @@ document.addEventListener('alpine:init', () => {
     // State: 'question' | 'answer' | 'flipping'
     state: 'question',
 
+    // Deck currently being studied
+    currentDeckId: null,
+
     // Current card being reviewed
     currentCard: null,
 
@@ -220,11 +223,48 @@ document.addEventListener('alpine:init', () => {
     // Correct answers in this session
     correctCount: 0,
 
-    // Cards remaining in queue
-    queue: [],
+    // Session-local retry queue: cards answered incorrectly, waiting to reappear.
+    // Each entry: { cardId: string, counter: number } — counter decrements after each
+    // subsequent answer; card resurfaces when counter <= 0.
+    retryQueue: [],
+
+    // Count of never-reviewed cards surfaced this session (for newCardsPerSession cap)
+    newCardsSurfaced: 0,
 
     // Is session active
     isActive: false,
+
+    _isNew(cardId) {
+      return ReviewStorage.getCardStats(cardId).totalReviews === 0;
+    },
+
+    _pickNext(justAnsweredId) {
+      const dueRetries = this.retryQueue
+        .filter(r => r.counter <= 0)
+        .sort((a, b) => a.counter - b.counter);
+      if (dueRetries.length > 0) {
+        const retryId = dueRetries[0].cardId;
+        this.retryQueue = this.retryQueue.filter(r => r.cardId !== retryId);
+        const card = CardStorage.getById(retryId);
+        if (card && !card.isArchived) return card;
+      }
+
+      const settings = SettingsStorage.get();
+      const excludeNew = this.newCardsSurfaced >= (settings.newCardsPerSession || 0);
+
+      const picked = Scheduler.pickNextCard(this.currentDeckId, {
+        excludeCardId: justAnsweredId,
+        excludeNew
+      });
+
+      if (!picked && excludeNew) {
+        return Scheduler.pickNextCard(this.currentDeckId, {
+          excludeCardId: justAnsweredId,
+          excludeNew: false
+        });
+      }
+      return picked;
+    },
 
     /**
      * Start a new session
@@ -236,23 +276,25 @@ document.addEventListener('alpine:init', () => {
         return false;
       }
 
+      this.currentDeckId = deckId;
       this.sessionStartedAt = Date.now();
       this.reviewedCount = 0;
       this.correctCount = 0;
+      this.retryQueue = [];
+      this.newCardsSurfaced = 0;
       this.isActive = true;
       this.state = 'question';
       this.nextCardData = null;
 
-      // Use scheduler to build queue
-      this.queue = Scheduler.buildQueue(deckId);
-
-      if (this.queue.length === 0) {
+      const first = this._pickNext(null);
+      if (!first) {
         Alpine.store('app').showError('No cards to review right now.');
+        this.isActive = false;
         return false;
       }
 
-      // Load first card
-      this.currentCard = this.queue.shift();
+      this.currentCard = first;
+      if (this._isNew(first.id)) this.newCardsSurfaced++;
       this.cardStartedAt = Date.now();
 
       Alpine.store('app').navigate('session');
