@@ -578,7 +578,23 @@
               >
               <p class="text-xs text-text-muted mt-1">Max new cards introduced per session</p>
             </div>
-            
+
+            <!-- Due-card Bias (α) -->
+            <div>
+              <div class="flex justify-between mb-2">
+                <label class="text-text-muted">Due-card Bias (α)</label>
+                <span class="font-mono text-accent" x-text="$store.settings.values.pickerAlpha"></span>
+              </div>
+              <input
+                type="range"
+                min="0.5" max="3.0" step="0.1"
+                class="w-full"
+                x-model="$store.settings.values.pickerAlpha"
+                @change="$store.settings.update('pickerAlpha', $event.target.value)"
+              >
+              <p class="text-xs text-text-muted mt-1">Higher = stronger bias toward cards with low recall</p>
+            </div>
+
             <!-- Reset Button -->
             <button 
               @click="$store.settings.reset()"
