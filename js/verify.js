@@ -120,6 +120,37 @@ window.TESTS.push(function () {
     Scheduler.calculateRetrievability(1, null, now), 0);
 });
 
+// ---- _weightedSample ----
+window.TESTS.push(function () {
+  VERIFY.group('_weightedSample');
+
+  // Deterministic: one item with non-zero weight is always picked.
+  const one = Scheduler._weightedSample(
+    [{ v: 'a' }, { v: 'b' }, { v: 'c' }],
+    [0, 1, 0]
+  );
+  VERIFY.assertEqual('single non-zero weight is picked', one.v, 'b');
+
+  // All-zero weights returns null.
+  const none = Scheduler._weightedSample([{ v: 'a' }], [0]);
+  VERIFY.assertEqual('all-zero weights returns null', none, null);
+
+  // Empty input returns null.
+  VERIFY.assertEqual('empty input returns null', Scheduler._weightedSample([], []), null);
+
+  // Distribution: over 10,000 trials with weights [1, 3], item B should be picked
+  // roughly 75% of the time (± 3%).
+  let bCount = 0;
+  for (let i = 0; i < 10000; i++) {
+    const pick = Scheduler._weightedSample([{ v: 'a' }, { v: 'b' }], [1, 3]);
+    if (pick.v === 'b') bCount++;
+  }
+  const ratio = bCount / 10000;
+  VERIFY.assert('weight [1,3] picks B ~75% of the time',
+    ratio > 0.72 && ratio < 0.78,
+    `got ${ratio.toFixed(3)}`);
+});
+
 // ---- getCardStats integration ----
 window.TESTS.push(function () {
   VERIFY.group('getCardStats integration');

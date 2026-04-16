@@ -45,6 +45,20 @@ const Scheduler = {
     return Math.exp(-days / stability);
   },
 
+  _weightedSample(items, weights) {
+    if (items.length === 0) return null;
+    let total = 0;
+    for (const w of weights) total += w;
+    if (total <= 0) return null;
+
+    let r = Math.random() * total;
+    for (let i = 0; i < items.length; i++) {
+      r -= weights[i];
+      if (r <= 0) return items[i];
+    }
+    return items[items.length - 1];
+  },
+
   /**
    * Build a review queue ranked by Ebbinghaus retrievability.
    * New cards (never reviewed) are treated as maximally due (R=0, priority=1).
