@@ -315,15 +315,14 @@ document.addEventListener('alpine:init', () => {
      * @param {boolean} correct - Was the answer correct
      */
     answer(correct) {
-      // Only accept answers when showing the answer
       if (this.state !== 'answer' || !this.currentCard) return;
 
       const answeredAt = Date.now();
       const durationMs = answeredAt - this.cardStartedAt;
+      const answeredCardId = this.currentCard.id;
 
-      // Record the review
       ReviewStorage.create({
-        cardId: this.currentCard.id,
+        cardId: answeredCardId,
         deckId: this.currentCard.deckId,
         startedAt: new Date(this.cardStartedAt).toISOString(),
         answeredAt: new Date(answeredAt).toISOString(),
@@ -332,27 +331,35 @@ document.addEventListener('alpine:init', () => {
       });
 
       this.reviewedCount++;
-      if (correct) {
-        this.correctCount++;
+      if (correct) this.correctCount++;
+
+      // Decrement every retry counter (tick one step of session time).
+      this.retryQueue = this.retryQueue.map(r => ({ ...r, counter: r.counter - 1 }));
+      // Drop any lingering retry entry for the card we just answered.
+      this.retryQueue = this.retryQueue.filter(r => r.cardId !== answeredCardId);
+
+      // On incorrect, schedule a retry with counter drawn uniformly from [5, 15],
+      // clamped so we don't exceed (deck size − 1).
+      if (!correct) {
+        const deckSize = CardStorage.getByDeck(this.currentDeckId).length;
+        const maxK = Math.max(1, deckSize - 1);
+        const k = Math.min(maxK, 5 + Math.floor(Math.random() * 11)); // 5..15 inclusive
+        this.retryQueue.push({ cardId: answeredCardId, counter: k });
       }
 
-      // Check if there are more cards
-      if (this.queue.length === 0) {
+      const next = this._pickNext(answeredCardId);
+      if (!next) {
         this.end();
         return;
       }
 
-      // Preload next card data
-      this.nextCardData = this.queue.shift();
-
-      // Transition to flipping state (card flips back, but content stays)
+      this.nextCardData = next;
       this.state = 'flipping';
 
-      // After flip animation completes, swap the card content
-      // (600ms matches the CSS flip animation; changing one requires the other)
       setTimeout(() => {
         this.currentCard = this.nextCardData;
         this.nextCardData = null;
+        if (this._isNew(this.currentCard.id)) this.newCardsSurfaced++;
         this.cardStartedAt = Date.now();
         this.state = 'question';
       }, 600);
@@ -364,24 +371,24 @@ document.addEventListener('alpine:init', () => {
     end() {
       this.isActive = false;
       this.currentCard = null;
+      this.currentDeckId = null;
+      this.retryQueue = [];
+      this.newCardsSurfaced = 0;
       Alpine.store('app').navigate('home');
 
       if (this.reviewedCount > 0) {
         const rate = Math.round((this.correctCount / this.reviewedCount) * 100);
         Alpine.store('app').showSuccess(
-          `Session complete! ${this.reviewedCount} cards reviewed, ${rate}% correct.`
+          `Session ended. ${this.reviewedCount} cards reviewed, ${rate}% correct.`
         );
       }
     },
 
-    /**
-     * Get session progress
-     */
-    getProgress() {
-      const total = this.reviewedCount + this.queue.length;
-      if (total === 0) return 0;
-      return Math.round((this.reviewedCount / total) * 100);
-    }
+    getSummary() {
+      if (this.reviewedCount === 0) return '0 reviewed';
+      const rate = Math.round((this.correctCount / this.reviewedCount) * 100);
+      return `${this.reviewedCount} reviewed · ${rate}% correct`;
+    },
   });
 
   /**
