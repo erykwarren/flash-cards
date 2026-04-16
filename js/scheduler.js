@@ -59,6 +59,30 @@ const Scheduler = {
     return items[items.length - 1];
   },
 
+  pickNextCard(deckId, opts = {}) {
+    const settings = SettingsStorage.get();
+    const alpha = opts.alpha != null ? opts.alpha : (settings.pickerAlpha != null ? settings.pickerAlpha : 1.0);
+    const now = Date.now();
+
+    const cards = CardStorage.getByDeck(deckId);
+    const eligible = [];
+    const weights = [];
+
+    for (const card of cards) {
+      if (opts.excludeCardId && card.id === opts.excludeCardId) continue;
+      const stats = ReviewStorage.getCardStats(card.id);
+      const isNew = stats.totalReviews === 0;
+      if (opts.excludeNew && isNew) continue;
+
+      const R = isNew ? 0 : this.calculateRetrievability(stats.stability, stats.lastReviewedAt, now);
+      const weight = Math.pow(Math.max(0, 1 - R), alpha);
+      eligible.push(card);
+      weights.push(weight);
+    }
+
+    return this._weightedSample(eligible, weights);
+  },
+
   /**
    * Build a review queue ranked by Ebbinghaus retrievability.
    * New cards (never reviewed) are treated as maximally due (R=0, priority=1).

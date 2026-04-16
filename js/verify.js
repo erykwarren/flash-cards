@@ -151,6 +151,96 @@ window.TESTS.push(function () {
     `got ${ratio.toFixed(3)}`);
 });
 
+// ---- pickNextCard ----
+window.TESTS.push(function () {
+  VERIFY.group('pickNextCard');
+
+  const originalSettings = localStorage.getItem('flashcards_settings');
+  const originalReviews = localStorage.getItem('flashcards_reviews');
+  const originalCards = localStorage.getItem('flashcards_cards');
+
+  try {
+    SettingsStorage.update({ pickerAlpha: 1.0, newCardsPerSession: 5 });
+    const deckId = '__verify_pick__';
+    const day = 86400000;
+    const now = Date.now();
+
+    // Three cards:
+    //   c_due: reviewed 20 days ago, one correct → R ≈ 0 (very due)
+    //   c_fresh: reviewed 1 hour ago, one correct → R ≈ 1 (not due)
+    //   c_new: never reviewed → R = 0 (maximally due)
+    const cards = [
+      { id: 'c_due', deckId, question: 'due', answer: 'due', isArchived: false, createdAt: new Date().toISOString() },
+      { id: 'c_fresh', deckId, question: 'fresh', answer: 'fresh', isArchived: false, createdAt: new Date().toISOString() },
+      { id: 'c_new', deckId, question: 'new', answer: 'new', isArchived: false, createdAt: new Date().toISOString() }
+    ];
+    localStorage.setItem('flashcards_cards', JSON.stringify(cards));
+
+    const reviews = [
+      { id: 'rv1', cardId: 'c_due', deckId, startedAt: new Date(now - 20 * day).toISOString(),
+        answeredAt: new Date(now - 20 * day).toISOString(), durationMs: 1000, outcome: 'correct' },
+      { id: 'rv2', cardId: 'c_fresh', deckId, startedAt: new Date(now - 3600000).toISOString(),
+        answeredAt: new Date(now - 3600000).toISOString(), durationMs: 1000, outcome: 'correct' }
+    ];
+    localStorage.setItem('flashcards_reviews', JSON.stringify(reviews));
+
+    // Distribution check: over 2000 picks, c_fresh should appear rarely (< 5%),
+    // and c_due + c_new should dominate.
+    const counts = { c_due: 0, c_fresh: 0, c_new: 0 };
+    for (let i = 0; i < 2000; i++) {
+      const card = Scheduler.pickNextCard(deckId, {});
+      counts[card.id]++;
+    }
+    VERIFY.assert('c_fresh picked rarely (< 5%)',
+      counts.c_fresh < 100,
+      `got ${counts.c_fresh}/2000`);
+    VERIFY.assert('c_due + c_new dominate (> 95%)',
+      counts.c_due + counts.c_new > 1900,
+      `got ${counts.c_due + counts.c_new}/2000`);
+
+    // Random start: two separate picks don't always return the same card.
+    const picks = new Set();
+    for (let i = 0; i < 50; i++) picks.add(Scheduler.pickNextCard(deckId, {}).id);
+    VERIFY.assert('first pick varies across runs', picks.size >= 2, `got ${picks.size} distinct`);
+
+    // excludeCardId: pickNextCard honors exclusion.
+    for (let i = 0; i < 100; i++) {
+      const pick = Scheduler.pickNextCard(deckId, { excludeCardId: 'c_due' });
+      if (pick.id === 'c_due') {
+        VERIFY.assert('excludeCardId honored', false, 'picker returned excluded card');
+        return;
+      }
+    }
+    VERIFY.assert('excludeCardId honored', true);
+
+    // excludeNew: new cards are excluded when flag set.
+    for (let i = 0; i < 100; i++) {
+      const pick = Scheduler.pickNextCard(deckId, { excludeNew: true });
+      if (pick.id === 'c_new') {
+        VERIFY.assert('excludeNew honored', false, 'picker returned new card');
+        return;
+      }
+    }
+    VERIFY.assert('excludeNew honored', true);
+
+    // Empty deck: returns null.
+    VERIFY.assertEqual('empty deck returns null',
+      Scheduler.pickNextCard('__no_such_deck__', {}), null);
+
+    // Only excluded card available: returns null.
+    localStorage.setItem('flashcards_cards', JSON.stringify([cards[0]]));
+    VERIFY.assertEqual('all cards excluded returns null',
+      Scheduler.pickNextCard(deckId, { excludeCardId: 'c_due' }), null);
+  } finally {
+    if (originalSettings === null) localStorage.removeItem('flashcards_settings');
+    else localStorage.setItem('flashcards_settings', originalSettings);
+    if (originalReviews === null) localStorage.removeItem('flashcards_reviews');
+    else localStorage.setItem('flashcards_reviews', originalReviews);
+    if (originalCards === null) localStorage.removeItem('flashcards_cards');
+    else localStorage.setItem('flashcards_cards', originalCards);
+  }
+});
+
 // ---- getCardStats integration ----
 window.TESTS.push(function () {
   VERIFY.group('getCardStats integration');
