@@ -277,18 +277,9 @@
           @keydown.window.escape="$store.session.end()"
         >
           
-          <!-- Progress Bar -->
-          <div class="w-full max-w-md mb-8">
-            <div class="flex justify-between text-sm text-text-muted mb-2">
-              <span x-text="$store.session.reviewedCount + ' reviewed'"></span>
-              <span x-text="$store.session.queue.length + ' remaining'"></span>
-            </div>
-            <div class="progress-bar h-2">
-              <div 
-                class="progress-fill" 
-                :style="'width: ' + $store.session.getProgress() + '%'"
-              ></div>
-            </div>
+          <!-- Session header (unbounded session — no fixed total) -->
+          <div class="w-full max-w-md mb-8 text-center">
+            <p class="text-sm text-text-muted" x-text="$store.session.getSummary()"></p>
           </div>
           
           <!-- Flashcard -->
