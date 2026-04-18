@@ -12,7 +12,7 @@ const settings = {
   failureMultiplier: 0.5,
   initialStability: 1.0,
   minStability: 0.5,
-  newCardsPerSession: 5,
+  newCardsPerSession: 0,
   pickerAlpha: 1.0,
 };
 
@@ -104,7 +104,8 @@ function sessionPickNext(justAnsweredId, now) {
     if (card && !card.isArchived) return card;
   }
 
-  let excludeNew = newCardsSurfaced >= (settings.newCardsPerSession || 0);
+  const cap = settings.newCardsPerSession;
+  let excludeNew = cap > 0 && newCardsSurfaced >= cap;
 
   // FIX: relax the cap when every non-new eligible card has already been seen
   if (excludeNew) {

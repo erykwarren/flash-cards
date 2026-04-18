@@ -253,7 +253,8 @@ document.addEventListener('alpine:init', () => {
       }
 
       const settings = SettingsStorage.get();
-      let excludeNew = this.newCardsSurfaced >= (settings.newCardsPerSession || 0);
+      const cap = settings.newCardsPerSession;
+      let excludeNew = cap > 0 && this.newCardsSurfaced >= cap;
 
       // Relax the new-card cap when every non-new eligible card has already
       // been seen this session — otherwise the picker just cycles the same

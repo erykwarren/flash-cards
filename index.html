@@ -569,16 +569,16 @@
             <div>
               <div class="flex justify-between mb-2">
                 <label class="text-text-muted">New Cards Per Session</label>
-                <span class="font-mono text-accent" x-text="$store.settings.values.newCardsPerSession"></span>
+                <span class="font-mono text-accent" x-text="$store.settings.values.newCardsPerSession == 0 ? '∞' : $store.settings.values.newCardsPerSession"></span>
               </div>
-              <input 
-                type="range" 
-                min="1" max="20" step="1"
+              <input
+                type="range"
+                min="0" max="20" step="1"
                 class="w-full"
                 x-model="$store.settings.values.newCardsPerSession"
                 @change="$store.settings.update('newCardsPerSession', $event.target.value)"
               >
-              <p class="text-xs text-text-muted mt-1">Max new cards introduced per session</p>
+              <p class="text-xs text-text-muted mt-1">Max new cards introduced per session (0 = unlimited)</p>
             </div>
 
             <!-- Due-card Bias (α) -->

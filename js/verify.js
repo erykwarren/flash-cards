@@ -160,7 +160,7 @@ window.TESTS.push(function () {
   const originalCards = localStorage.getItem('flashcards_cards');
 
   try {
-    SettingsStorage.update({ pickerAlpha: 1.0, newCardsPerSession: 5 });
+    SettingsStorage.update({ pickerAlpha: 1.0, newCardsPerSession: 0 });
     const deckId = '__verify_pick__';
     const day = 86400000;
     const now = Date.now();
