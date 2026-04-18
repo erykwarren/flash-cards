@@ -228,6 +228,9 @@ document.addEventListener('alpine:init', () => {
     // subsequent answer; card resurfaces when counter <= 0.
     retryQueue: [],
 
+    // Set of card IDs seen at least once this session (for new-card gating)
+    seenCardIds: new Set(),
+
     // Count of never-reviewed cards surfaced this session (for newCardsPerSession cap)
     newCardsSurfaced: 0,
 
@@ -250,7 +253,21 @@ document.addEventListener('alpine:init', () => {
       }
 
       const settings = SettingsStorage.get();
-      const excludeNew = this.newCardsSurfaced >= (settings.newCardsPerSession || 0);
+      let excludeNew = this.newCardsSurfaced >= (settings.newCardsPerSession || 0);
+
+      // Relax the new-card cap when every non-new eligible card has already
+      // been seen this session — otherwise the picker just cycles the same
+      // small set instead of introducing fresh cards.
+      if (excludeNew) {
+        const allCards = CardStorage.getByDeck(this.currentDeckId);
+        const reviewedCardIds = new Set(ReviewStorage.getAll().map(r => r.cardId));
+        const hasUnseenReviewed = allCards.some(c =>
+          c.id !== justAnsweredId &&
+          !this.seenCardIds.has(c.id) &&
+          reviewedCardIds.has(c.id)
+        );
+        if (!hasUnseenReviewed) excludeNew = false;
+      }
 
       const picked = Scheduler.pickNextCard(this.currentDeckId, {
         excludeCardId: justAnsweredId,
@@ -281,6 +298,7 @@ document.addEventListener('alpine:init', () => {
       this.reviewedCount = 0;
       this.correctCount = 0;
       this.retryQueue = [];
+      this.seenCardIds = new Set();
       this.newCardsSurfaced = 0;
       this.isActive = true;
       this.state = 'question';
@@ -294,6 +312,7 @@ document.addEventListener('alpine:init', () => {
       }
 
       this.currentCard = first;
+      this.seenCardIds.add(first.id);
       if (this._isNew(first.id)) this.newCardsSurfaced++;
       this.cardStartedAt = Date.now();
 
@@ -359,6 +378,7 @@ document.addEventListener('alpine:init', () => {
       setTimeout(() => {
         this.currentCard = this.nextCardData;
         this.nextCardData = null;
+        this.seenCardIds.add(this.currentCard.id);
         if (this._isNew(this.currentCard.id)) this.newCardsSurfaced++;
         this.cardStartedAt = Date.now();
         this.state = 'question';
@@ -373,6 +393,7 @@ document.addEventListener('alpine:init', () => {
       this.currentCard = null;
       this.currentDeckId = null;
       this.retryQueue = [];
+      this.seenCardIds = new Set();
       this.newCardsSurfaced = 0;
       Alpine.store('app').navigate('home');
 
