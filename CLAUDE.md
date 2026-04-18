@@ -8,9 +8,10 @@ A static, no-build browser flashcard app backed by public Google Sheets (CSV exp
 
 ## Commands
 
-There is no package manager, build step, linter, or test suite. Development is: edit → refresh browser.
+There is no package manager, build step, or linter. Development is: edit → refresh browser.
 
 - Local dev: `./update-version.sh && python -m http.server 8000` then open http://localhost:8000. `update-version.sh` generates `version.js` (git-ignored; also generated in CI). Without it `window.APP_VERSION` is just `undefined` — not fatal, but version stamps in logs will read `dev`.
+- Picker simulation: `node sim.js` — headless Node script that simulates 200 answers (95% success rate) against a 146-card deck and reports unique-card coverage and pick distribution. Useful for verifying picker/session changes don't regress to cycling a small subset.
 - Deploy: push to `main`. The Actions workflow regenerates `version.js` with the short SHA and uploads the whole repo as the Pages artifact.
 
 ## Architecture
@@ -41,4 +42,4 @@ Algorithm parameters (`successMultiplier`, `failureMultiplier`, `initialStabilit
 
 `Alpine.store('session')` has three states: `question` → (tap) → `answer` → (grade button) → `flipping` → (600 ms timeout) → `question` with the next card. The 600 ms matches the CSS flip animation duration; changing one requires changing the other. Answers are only accepted in the `answer` state.
 
-Sessions are unbounded: there is no pre-built queue. After each answer, `session._pickNext` consults a session-local `retryQueue` (cards answered incorrectly, scheduled to reappear after 5–15 answers) before falling back to `Scheduler.pickNextCard`. The session ends only when the user clicks "End Session" or presses ESC — or when the deck is effectively empty (e.g., a one-card deck with the just-answered card excluded). The `newCardsPerSession` cap is enforced by excluding never-reviewed cards from the picker once the cap is reached, and relaxed as a fallback if that would leave no candidate.
+Sessions are unbounded: there is no pre-built queue. After each answer, `session._pickNext` consults a session-local `retryQueue` (cards answered incorrectly, scheduled to reappear after 5–15 answers) before falling back to `Scheduler.pickNextCard`. The session ends only when the user clicks "End Session" or presses ESC — or when the deck is effectively empty (e.g., a one-card deck with the just-answered card excluded). The `newCardsPerSession` cap is enforced by excluding never-reviewed cards from the picker once the cap is reached, and relaxed once every reviewed card has already been seen this session (tracked via `seenCardIds`) so the picker doesn't dead-end cycling the same small set.
