@@ -652,6 +652,24 @@
             </template>
           </div>
           
+          <!-- Debug -->
+          <div class="surface rounded-xl p-6 space-y-4">
+            <h2 class="font-heading text-lg font-semibold">Debug</h2>
+            <button
+              @click="
+                const data = {};
+                Object.values(STORAGE_KEYS).forEach(k => { const v = localStorage.getItem(k); if (v) data[k] = JSON.parse(v); });
+                navigator.clipboard.writeText(JSON.stringify(data, null, 2)).then(
+                  () => $store.app.showSuccess('localStorage copied to clipboard'),
+                  () => $store.app.showError('Copy failed — check browser permissions')
+                )
+              "
+              class="w-full btn surface py-3 rounded-lg text-text-muted hover:text-accent hover:border-accent transition"
+            >
+              Copy localStorage to Clipboard
+            </button>
+          </div>
+
           <!-- Danger Zone -->
           <div class="surface rounded-xl p-6 border-error/50 space-y-4">
             <h2 class="font-heading text-lg font-semibold text-error">Danger Zone</h2>
