@@ -322,11 +322,13 @@ document.addEventListener('alpine:init', () => {
     },
 
     /**
-     * Flip the card to show answer
+     * Flip the card between question and answer
      */
     flip() {
       if (this.state === 'question') {
         this.state = 'answer';
+      } else if (this.state === 'answer') {
+        this.state = 'question';
       }
     },
 
