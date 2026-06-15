@@ -178,6 +178,21 @@ document.addEventListener('alpine:init', () => {
     },
 
     /**
+     * Rename a deck via a prompt, pre-filled with the current name.
+     * No-op if the user cancels or leaves the name empty/unchanged.
+     */
+    renameDeck(deckId) {
+      const deck = DeckStorage.getById(deckId);
+      if (!deck) return;
+      const input = prompt('Rename deck', deck.name);
+      if (input === null) return;
+      const trimmed = input.trim();
+      if (!trimmed || trimmed === deck.name) return;
+      DeckStorage.update(deckId, { name: trimmed });
+      this.loadDecks();
+    },
+
+    /**
      * Delete a deck (archives its cards; review history preserved in log).
      */
     deleteDeck(deckId) {
