@@ -36,6 +36,113 @@ const SheetsService = {
   },
 
   /**
+   * Build the public HTML view URL, which lists every tab (name + gid).
+   */
+  buildHtmlViewUrl(spreadsheetId) {
+    return `https://docs.google.com/spreadsheets/d/${spreadsheetId}/htmlview`;
+  },
+
+  /**
+   * Extract the tab list from the htmlview page source.
+   * The page contains one `items.push({name: "...", pageUrl: "...", gid: "..."` per tab.
+   * @returns {Array<{gid:string, name:string}>}
+   */
+  parseTabList(html) {
+    const tabs = [];
+    const seen = new Set();
+    const re = /items\.push\(\{name:\s*"((?:[^"\\]|\\.)*)",[^}]*?gid:\s*"(\d+)"/g;
+    let m;
+    while ((m = re.exec(html)) !== null) {
+      const gid = m[2];
+      if (seen.has(gid)) continue;
+      seen.add(gid);
+      tabs.push({ gid, name: this._decodeJsString(m[1]) });
+    }
+    return tabs;
+  },
+
+  _decodeJsString(s) {
+    try {
+      // \xNN isn't valid JSON; rewrite it as \u00NN, then let JSON decode the rest.
+      return JSON.parse('"' + s.replace(/\\x([0-9a-fA-F]{2})/g, '\\u00$1') + '"');
+    } catch (err) {
+      return s;
+    }
+  },
+
+  /**
+   * Discover the tabs of a public spreadsheet.
+   * @returns {Promise<{success:boolean, tabs?:Array<{gid,name}>, error?:string}>}
+   */
+  async fetchTabs(spreadsheetId) {
+    try {
+      const response = await fetch(this.buildHtmlViewUrl(spreadsheetId), { redirect: 'follow' });
+      if (!response.ok) return { success: false, error: `Tab list fetch failed (${response.status}).` };
+      const tabs = this.parseTabList(await response.text());
+      if (tabs.length === 0) return { success: false, error: 'No tabs found.' };
+      return { success: true, tabs };
+    } catch (err) {
+      return { success: false, error: "Couldn't load the tab list." };
+    }
+  },
+
+  /**
+   * Fetch every tab of a spreadsheet and merge the cards. Each card carries
+   * `categories`: the gids of the tabs it appears in (a word listed in two
+   * tabs becomes one card in both categories).
+   *
+   * If tab discovery fails, falls back to `fallbackTabs` (the last known
+   * list). Empty tabs are kept in the list but contribute no cards. Any other
+   * tab failure fails the whole fetch, so a sync never archives cards just
+   * because one request failed.
+   *
+   * @returns {Promise<{success:boolean, tabs?:Array, cards?:Array, error?:string}>}
+   */
+  async fetchSpreadsheet(spreadsheetId, fallbackTabs) {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      return { success: false, error: 'offline' };
+    }
+
+    let tabs;
+    const tabResult = await this.fetchTabs(spreadsheetId);
+    if (tabResult.success) {
+      tabs = tabResult.tabs;
+    } else if (fallbackTabs && fallbackTabs.length > 0) {
+      console.warn('fetchTabs failed, using cached tab list:', tabResult.error);
+      tabs = fallbackTabs;
+    } else {
+      return { success: false, error: tabResult.error };
+    }
+
+    const results = await Promise.all(
+      tabs.map(t => this.fetchCsv(this.buildCsvUrl(spreadsheetId, t.gid)))
+    );
+
+    const byKey = new Map();
+    for (let i = 0; i < tabs.length; i++) {
+      const r = results[i];
+      if (!r.success) {
+        if (r.error === 'No valid cards found.') continue;
+        return { success: false, error: `${tabs[i].name}: ${r.error}` };
+      }
+      for (const card of r.cards) {
+        const key = `${card.question.toLowerCase()}\u0000${card.answer.toLowerCase()}`;
+        const existing = byKey.get(key);
+        if (existing) {
+          if (!existing.categories.includes(tabs[i].gid)) existing.categories.push(tabs[i].gid);
+          if (!existing.example && card.example) existing.example = card.example;
+        } else {
+          byKey.set(key, { ...card, categories: [tabs[i].gid] });
+        }
+      }
+    }
+
+    const cards = Array.from(byKey.values());
+    if (cards.length === 0) return { success: false, error: 'No valid cards found.' };
+    return { success: true, tabs, cards };
+  },
+
+  /**
    * Fetch and parse a deck's CSV.
    * @param {string} csvUrl
    * @returns {Promise<{success:boolean, cards?:Array, error?:string}>}

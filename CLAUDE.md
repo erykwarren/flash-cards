@@ -28,9 +28,15 @@ Keys live under `flashcards_*` (see `STORAGE_KEYS` in `storage.js`). Four collec
 
 ### Sheets import
 
-Decks are user-configured in the Settings view by pasting a Google Sheets URL. The sheet must be shared as "Anyone with the link → Viewer." `SheetsService.fetchCsv` fetches `https://docs.google.com/spreadsheets/d/{spreadsheetId}/export?format=csv&gid={gid}` with no auth headers, then `SheetsService.parseCsv` parses the text. Columns: A = question, B = answer, C = example (optional). A header row is auto-detected via `isHeaderRow` (keyword match on the first row). Empty rows are skipped. On every app load, `app.js` init runs `fetchCsv → syncCards` for every configured deck in parallel; failed fetches leave the cached `localStorage` copy in place.
+Decks are user-configured in the Settings view by pasting a Google Sheets URL. The sheet must be shared as "Anyone with the link → Viewer." A deck covers the **whole spreadsheet**: every tab is a *category*. `SheetsService.fetchSpreadsheet` first discovers the tabs by fetching the public `/htmlview` page and parsing its `items.push({name, …, gid})` entries (`parseTabList`; CORS-allowed, no auth), then fetches each tab via `export?format=csv&gid={gid}` and merges the cards. A word present in several tabs becomes one card whose `categories` array lists every tab gid. If tab discovery fails it falls back to the deck's cached `tabs`; if any non-empty tab fails, the whole fetch fails so a sync never archives cards from partial data. Columns: A = question, B = answer, C = example (optional). A header row is auto-detected per tab via `isHeaderRow` (substring keyword match on the first row — note that `'a'`/`'q'` are keywords, so a headerless tab whose first word contains "a" loses that row). Empty rows are skipped. On every app load, `app.js` init runs `SyncService.syncDeck` (→ `fetchSpreadsheet → syncCards`) for every configured deck in parallel; failed fetches leave the cached `localStorage` copy in place.
 
-`SheetsService.parseSheetUrl(url)` extracts `{ spreadsheetId, gid }` from pasted URLs; `gid` defaults to `'0'` when absent. Non-Sheets URLs or bare IDs return `null`.
+Card IDs do not include the tab, so moving a word between tabs keeps its history; `syncCards` just updates `categories`. Decks store `tabs: [{gid, name}]` (refreshed each sync) and `lastCategories` (last picker choice; `null` = all).
+
+`SheetsService.parseSheetUrl(url)` extracts `{ spreadsheetId, gid }` from pasted URLs; `gid` defaults to `'0'` when absent. Non-Sheets URLs or bare IDs return `null`. The gid is stored but no longer limits what gets imported.
+
+### Category picker
+
+"Start Study Session" calls `app.startStudy(deckId)`, which opens a modal listing the deck's non-empty categories with card counts, preselected from `deck.lastCategories`. "Toutes les catégories" selects everything and dims the individual tabs; ticking a dimmed tab switches to just that tab. Decks with a single non-empty category skip the picker. The chosen gids are passed to `session.start(deckId, categories)`; the session and `Scheduler.pickNextCard(deckId, { categories })` restrict to `CardStorage.getByDeckAndCategories`. Deck-level stats are not split by category.
 
 ### Scheduler
 

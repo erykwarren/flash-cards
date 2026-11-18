@@ -160,6 +160,17 @@ const CardStorage = {
     return cards.filter(c => c.deckId === deckId && (includeArchived || !c.isArchived));
   },
 
+  /**
+   * Active cards of a deck restricted to the given categories (tab gids).
+   * `categories` null/undefined means all categories.
+   */
+  getByDeckAndCategories(deckId, categories) {
+    const cards = this.getByDeck(deckId);
+    if (!categories) return cards;
+    const wanted = new Set(categories);
+    return cards.filter(c => (c.categories || []).some(g => wanted.has(g)));
+  },
+
   getById(id) {
     const cards = this.getAll();
     return cards.find(c => c.id === id) || null;
@@ -188,6 +199,7 @@ const CardStorage = {
       question: card.question.trim(),
       answer: card.answer.trim(),
       example: card.example || null,
+      categories: card.categories || [],
       isArchived: false,
       createdAt: new Date().toISOString()
     };
@@ -243,11 +255,15 @@ const CardStorage = {
       
       const existing = existingCards.find(c => c.id === id);
       if (existing) {
-        // Update if archived or if example has changed
-        if (existing.isArchived || existing.example !== (data.example || null)) {
-          this.update(id, { 
+        const categories = data.categories || [];
+        const categoriesChanged =
+          JSON.stringify([...(existing.categories || [])].sort()) !== JSON.stringify([...categories].sort());
+        // Update if archived, or if example or categories changed
+        if (existing.isArchived || existing.example !== (data.example || null) || categoriesChanged) {
+          this.update(id, {
             isArchived: false,
-            example: data.example || null
+            example: data.example || null,
+            categories
           });
           updated++;
         }

@@ -24,7 +24,7 @@ const SyncService = {
     Alpine.store('app').setLoading(true);
 
     try {
-      const result = await SheetsService.fetchCsv(deck.csvUrl);
+      const result = await this.fetchDeckSource(deck);
 
       if (!result.success) {
         return { success: false, message: result.error };
@@ -33,6 +33,7 @@ const SyncService = {
       const syncStats = await CardStorage.syncCards(deck.id, result.cards);
 
       DeckStorage.update(deck.id, {
+        tabs: result.tabs,
         lastSyncedAt: new Date().toISOString()
       });
 
@@ -55,6 +56,21 @@ const SyncService = {
     } finally {
       Alpine.store('app').setLoading(false);
     }
+  },
+
+  /**
+   * Fetch all tabs of the deck's spreadsheet. Decks without a spreadsheetId
+   * (shouldn't exist, but be safe) fall back to their single csvUrl.
+   * @returns {Promise<{success:boolean, tabs?:Array, cards?:Array, error?:string}>}
+   */
+  async fetchDeckSource(deck) {
+    if (deck.spreadsheetId) {
+      return SheetsService.fetchSpreadsheet(deck.spreadsheetId, deck.tabs);
+    }
+    const r = await SheetsService.fetchCsv(deck.csvUrl);
+    if (!r.success) return r;
+    const tabs = [{ gid: deck.gid || '0', name: deck.name }];
+    return { success: true, tabs, cards: r.cards.map(c => ({ ...c, categories: [tabs[0].gid] })) };
   },
 
   /**

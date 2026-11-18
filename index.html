@@ -186,7 +186,7 @@
           <div class="flex flex-col sm:flex-row gap-4 justify-center">
             <template x-if="$store.app.currentDeck && CardStorage.getByDeck($store.app.currentDeck.id).length > 0">
               <button 
-                @click="$store.session.start($store.app.currentDeck.id)"
+                @click="$store.app.startStudy($store.app.currentDeck.id)"
                 class="btn btn-accent px-8 py-4 rounded-xl font-heading font-semibold text-lg flex items-center justify-center gap-3 glow-accent"
               >
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -770,12 +770,65 @@
               </div>
             </div>
             <p class="text-xs text-text-muted mt-2">Column C is optional — examples appear on the answer side.</p>
+            <p class="text-xs text-text-muted mt-1">Every tab of the spreadsheet is imported. Use one tab per category (e.g. verbes, animaux) to choose what to practice before each session.</p>
           </div>
 
         </div>
       </template>
 
     </main>
+
+    <!-- CATEGORY PICKER -->
+    <template x-if="$store.app.picker.open">
+      <div
+        class="fixed inset-0 bg-bg/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4"
+        @click.self="$store.app.closePicker()"
+        @keydown.window.escape="$store.app.closePicker()"
+      >
+        <div class="surface bg-surface rounded-2xl w-full max-w-md max-h-[85vh] flex flex-col border border-border">
+          <div class="p-5 border-b border-border">
+            <h2 class="font-heading text-xl font-semibold">Catégories</h2>
+            <p class="text-sm text-text-muted mt-1">Choose what to practice.</p>
+          </div>
+
+          <div class="p-3 overflow-y-auto space-y-1">
+            <label class="flex items-center gap-3 px-3 py-3 rounded-lg cursor-pointer hover:bg-surface-hover">
+              <input type="checkbox" class="w-5 h-5 accent-[#00d4ff]"
+                :checked="$store.app.picker.all"
+                @change="$store.app.togglePickerAll()">
+              <span class="flex-1 font-medium">Toutes les catégories</span>
+              <span class="text-sm text-text-muted" x-text="CardStorage.getByDeck($store.app.picker.deckId).length"></span>
+            </label>
+            <div class="border-t border-border my-1"></div>
+            <template x-for="cat in $store.app.picker.categories" :key="cat.gid">
+              <label
+                class="flex items-center gap-3 px-3 py-3 rounded-lg cursor-pointer hover:bg-surface-hover transition-opacity"
+                :class="{ 'opacity-40': $store.app.picker.all }"
+              >
+                <input type="checkbox" class="w-5 h-5 accent-[#00d4ff]"
+                  :checked="$store.app.picker.all || $store.app.picker.selected.includes(cat.gid)"
+                  @change="$store.app.togglePickerCategory(cat.gid)">
+                <span class="flex-1" x-text="cat.name"></span>
+                <span class="text-sm text-text-muted" x-text="cat.count"></span>
+              </label>
+            </template>
+          </div>
+
+          <div class="p-4 border-t border-border flex gap-3">
+            <button
+              @click="$store.app.closePicker()"
+              class="btn surface flex-1 px-4 py-3 rounded-xl font-heading font-semibold"
+            >Cancel</button>
+            <button
+              @click="$store.app.confirmPicker()"
+              :disabled="!$store.app.pickerCanStart()"
+              class="btn btn-accent flex-1 px-4 py-3 rounded-xl font-heading font-semibold disabled:opacity-40"
+              x-text="'Start · ' + $store.app.pickerCardCount() + ' cards'"
+            ></button>
+          </div>
+        </div>
+      </div>
+    </template>
 
     <!-- Footer -->
     <footer class="border-t border-border py-4 text-center text-sm text-text-muted">

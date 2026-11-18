@@ -147,7 +147,8 @@ document.addEventListener('alpine:init', () => {
 
       this.setLoading(true);
       try {
-        const result = await SheetsService.fetchCsv(csvUrl);
+        // The deck covers the whole spreadsheet: every tab is a category.
+        const result = await SheetsService.fetchSpreadsheet(parsed.spreadsheetId);
         if (!result.success) {
           return { success: false, message: result.error };
         }
@@ -156,7 +157,8 @@ document.addEventListener('alpine:init', () => {
           name: trimmedName,
           spreadsheetId: parsed.spreadsheetId,
           gid: parsed.gid,
-          csvUrl
+          csvUrl,
+          tabs: result.tabs
         });
 
         const syncStats = await CardStorage.syncCards(deck.id, result.cards);
@@ -175,6 +177,93 @@ document.addEventListener('alpine:init', () => {
       } finally {
         this.setLoading(false);
       }
+    },
+
+    // Category picker shown before a study session.
+    // selected: array of tab gids; all: "Toutes les catégories" ticked.
+    picker: { open: false, deckId: null, categories: [], selected: [], all: true },
+
+    /**
+     * Categories (tabs) of a deck that currently hold at least one card,
+     * with their card counts. Order follows the spreadsheet.
+     */
+    getDeckCategories(deckId) {
+      const deck = DeckStorage.getById(deckId);
+      if (!deck || !deck.tabs) return [];
+      const cards = CardStorage.getByDeck(deckId);
+      return deck.tabs
+        .map(t => ({
+          gid: t.gid,
+          name: t.name,
+          count: cards.filter(c => (c.categories || []).includes(t.gid)).length
+        }))
+        .filter(t => t.count > 0);
+    },
+
+    /**
+     * Entry point for "Start Study Session". Opens the category picker,
+     * pre-filled with last time's choice, or starts directly when the deck
+     * has a single category.
+     */
+    startStudy(deckId) {
+      const categories = this.getDeckCategories(deckId);
+      if (categories.length <= 1) {
+        Alpine.store('session').start(deckId, null);
+        return;
+      }
+      const deck = DeckStorage.getById(deckId);
+      const known = new Set(categories.map(c => c.gid));
+      const last = Array.isArray(deck.lastCategories)
+        ? deck.lastCategories.filter(g => known.has(g))
+        : null;
+      const all = !last || last.length === 0;
+      this.picker = {
+        open: true,
+        deckId,
+        categories,
+        selected: all ? [] : last,
+        all
+      };
+    },
+
+    togglePickerAll() {
+      this.picker.all = !this.picker.all;
+    },
+
+    togglePickerCategory(gid) {
+      if (this.picker.all) {
+        // Picking a specific category while "Toutes" is on switches to that one.
+        this.picker.all = false;
+        this.picker.selected = [gid];
+        return;
+      }
+      const sel = this.picker.selected;
+      this.picker.selected = sel.includes(gid) ? sel.filter(g => g !== gid) : [...sel, gid];
+    },
+
+    pickerCanStart() {
+      return this.picker.all || this.picker.selected.length > 0;
+    },
+
+    pickerCardCount() {
+      if (this.picker.all) {
+        return CardStorage.getByDeck(this.picker.deckId).length;
+      }
+      return CardStorage.getByDeckAndCategories(this.picker.deckId, this.picker.selected).length;
+    },
+
+    closePicker() {
+      this.picker.open = false;
+    },
+
+    confirmPicker() {
+      if (!this.pickerCanStart()) return;
+      const { deckId, all, selected } = this.picker;
+      const categories = all ? null : [...selected];
+      DeckStorage.update(deckId, { lastCategories: categories });
+      this.picker.open = false;
+      this.loadDecks();
+      Alpine.store('session').start(deckId, categories);
     },
 
     /**
@@ -219,6 +308,13 @@ document.addEventListener('alpine:init', () => {
 
     // Deck currently being studied
     currentDeckId: null,
+
+    // Categories (tab gids) being studied; null = all
+    categories: null,
+
+    _sessionCards() {
+      return CardStorage.getByDeckAndCategories(this.currentDeckId, this.categories);
+    },
 
     // Current card being reviewed
     currentCard: null,
@@ -275,7 +371,7 @@ document.addEventListener('alpine:init', () => {
       // been seen this session — otherwise the picker just cycles the same
       // small set instead of introducing fresh cards.
       if (excludeNew) {
-        const allCards = CardStorage.getByDeck(this.currentDeckId);
+        const allCards = this._sessionCards();
         const reviewedCardIds = new Set(ReviewStorage.getAll().map(r => r.cardId));
         const hasUnseenReviewed = allCards.some(c =>
           c.id !== justAnsweredId &&
@@ -287,13 +383,15 @@ document.addEventListener('alpine:init', () => {
 
       const picked = Scheduler.pickNextCard(this.currentDeckId, {
         excludeCardId: justAnsweredId,
-        excludeNew
+        excludeNew,
+        categories: this.categories
       });
 
       if (!picked && excludeNew) {
         return Scheduler.pickNextCard(this.currentDeckId, {
           excludeCardId: justAnsweredId,
-          excludeNew: false
+          excludeNew: false,
+          categories: this.categories
         });
       }
       return picked;
@@ -302,14 +400,15 @@ document.addEventListener('alpine:init', () => {
     /**
      * Start a new session
      */
-    start(deckId) {
-      const cards = CardStorage.getByDeck(deckId);
+    start(deckId, categories = null) {
+      const cards = CardStorage.getByDeckAndCategories(deckId, categories);
       if (cards.length === 0) {
         Alpine.store('app').showError('No cards in this deck. Add a deck from Settings and refresh.');
         return false;
       }
 
       this.currentDeckId = deckId;
+      this.categories = categories;
       this.sessionStartedAt = Date.now();
       this.reviewedCount = 0;
       this.correctCount = 0;
@@ -378,7 +477,7 @@ document.addEventListener('alpine:init', () => {
       // On incorrect, schedule a retry with counter drawn uniformly from [5, 15],
       // clamped so we don't exceed (deck size − 1).
       if (!correct) {
-        const deckSize = CardStorage.getByDeck(this.currentDeckId).length;
+        const deckSize = this._sessionCards().length;
         const maxK = Math.max(1, deckSize - 1);
         const k = Math.min(maxK, 5 + Math.floor(Math.random() * 11)); // 5..15 inclusive
         this.retryQueue.push({ cardId: answeredCardId, counter: k });
@@ -410,6 +509,7 @@ document.addEventListener('alpine:init', () => {
       this.isActive = false;
       this.currentCard = null;
       this.currentDeckId = null;
+      this.categories = null;
       this.retryQueue = [];
       this.seenCardIds = new Set();
       this.newCardsSurfaced = 0;

@@ -64,7 +64,8 @@ const Scheduler = {
     const alpha = opts.alpha != null ? opts.alpha : (settings.pickerAlpha != null ? settings.pickerAlpha : 1.0);
     const now = Date.now();
 
-    const cards = CardStorage.getByDeck(deckId);
+    // opts.categories: array of tab gids to restrict to; null/undefined = all.
+    const cards = CardStorage.getByDeckAndCategories(deckId, opts.categories);
     const eligible = [];
     const weights = [];
 

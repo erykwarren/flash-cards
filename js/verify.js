@@ -437,3 +437,94 @@ window.TESTS.push(async function () {
     else localStorage.setItem('flashcards_decks', originalDecks);
   }
 });
+
+// ---- SheetsService.parseTabList ----
+window.TESTS.push(function () {
+  VERIFY.group('parseTabList');
+
+  const html =
+    'items.push({name: "Noms propres", pageUrl: "https:\\/\\/x\\/htmlview\\/sheet?headers\\x3dtrue&gid=0", gid: "0",initialSheet: ("0" == gid)});' +
+    'items.push({name: "d\\xe9monstratifs \\"x\\"", pageUrl: "https:\\/\\/x?gid=123", gid: "123",initialSheet: ("123" == gid)});' +
+    'items.push({name: "Noms propres", pageUrl: "dup", gid: "0",initialSheet: false});';
+  const tabs = SheetsService.parseTabList(html);
+  VERIFY.assertEqual('finds 2 unique tabs', tabs.length, 2);
+  VERIFY.assertEqual('first tab name', tabs[0] && tabs[0].name, 'Noms propres');
+  VERIFY.assertEqual('first tab gid', tabs[0] && tabs[0].gid, '0');
+  VERIFY.assertEqual('decodes \\x and \\" escapes', tabs[1] && tabs[1].name, 'démonstratifs "x"');
+  VERIFY.assertEqual('second tab gid', tabs[1] && tabs[1].gid, '123');
+  VERIFY.assertEqual('no tabs → empty list', SheetsService.parseTabList('<html></html>').length, 0);
+});
+
+// Note: words avoid 'a'/'q' so isHeaderRow doesn't eat first rows (see parseCsv note).
+// ---- Categories: fetchSpreadsheet merge + syncCards + filtering ----
+window.TESTS.push(async function () {
+  VERIFY.group('categories');
+
+  const originalFetch = window.fetch;
+  const originalCards = localStorage.getItem('flashcards_cards');
+  const pages = {
+    htmlview:
+      'items.push({name: "verbes", pageUrl: "u", gid: "0",initialSheet: true});' +
+      'items.push({name: "animaux", pageUrl: "u", gid: "7",initialSheet: false});' +
+      'items.push({name: "vide", pageUrl: "u", gid: "9",initialSheet: false});',
+    '0': 'question,answer\nmordre,to bite\nloup,wolf\n',
+    '7': 'loup,wolf,ex\nchien,dog\n',
+    '9': ''
+  };
+  window.fetch = async (url) => {
+    const key = url.endsWith('/htmlview') ? 'htmlview' : url.match(/gid=(\d+)/)[1];
+    return new Response(pages[key], { status: 200 });
+  };
+
+  try {
+    const r = await SheetsService.fetchSpreadsheet('SHEET');
+    VERIFY.assert('fetchSpreadsheet succeeds', r.success, r.error);
+    VERIFY.assertEqual('keeps all 3 tabs (incl. empty)', r.tabs.length, 3);
+    VERIFY.assertEqual('merges duplicate word → 3 cards', r.cards.length, 3);
+    const loup = r.cards.find(c => c.question === 'loup');
+    VERIFY.assertEqual('duplicate word is in both categories', loup.categories.join(','), '0,7');
+    VERIFY.assertEqual('duplicate word picks up example', loup.example, 'ex');
+
+    const deckId = '__verify_cat_deck__';
+    localStorage.setItem('flashcards_cards', JSON.stringify([]));
+    await CardStorage.syncCards(deckId, r.cards);
+    VERIFY.assertEqual('all categories → 3 cards',
+      CardStorage.getByDeckAndCategories(deckId, null).length, 3);
+    VERIFY.assertEqual('verbes only → 2 cards',
+      CardStorage.getByDeckAndCategories(deckId, ['0']).length, 2);
+    VERIFY.assertEqual('animaux only → 2 cards',
+      CardStorage.getByDeckAndCategories(deckId, ['7']).length, 2);
+
+    // Move "mordre" from verbes to animaux: same card id, history kept, category updated.
+    const mangerId = await generateCardId(deckId, 'mordre', 'to bite');
+    const moved = r.cards.map(c => c.question === 'mordre' ? { ...c, categories: ['7'] } : c);
+    const s = await CardStorage.syncCards(deckId, moved);
+    VERIFY.assertEqual('moving a word archives nothing', s.archived, 0);
+    VERIFY.assertEqual('moved word now in animaux',
+      CardStorage.getById(mangerId).categories.join(','), '7');
+    VERIFY.assertEqual('animaux now → 3 cards',
+      CardStorage.getByDeckAndCategories(deckId, ['7']).length, 3);
+
+    for (let i = 0; i < 30; i++) {
+      const pick = Scheduler.pickNextCard(deckId, { categories: ['0'] });
+      if (!pick || !pick.categories.includes('0')) {
+        VERIFY.assert('pickNextCard respects categories', false, pick && pick.question);
+        break;
+      }
+      if (i === 29) VERIFY.assert('pickNextCard respects categories', true);
+    }
+
+    // A failing (non-empty) tab fails the whole fetch, so sync never archives on partial data.
+    window.fetch = async (url) => {
+      if (url.includes('gid=7')) return new Response('', { status: 500 });
+      const key = url.endsWith('/htmlview') ? 'htmlview' : url.match(/gid=(\d+)/)[1];
+      return new Response(pages[key], { status: 200 });
+    };
+    const bad = await SheetsService.fetchSpreadsheet('SHEET');
+    VERIFY.assert('one tab failing → whole fetch fails', !bad.success);
+  } finally {
+    window.fetch = originalFetch;
+    if (originalCards === null) localStorage.removeItem('flashcards_cards');
+    else localStorage.setItem('flashcards_cards', originalCards);
+  }
+});
