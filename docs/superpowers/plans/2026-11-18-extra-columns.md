@@ -19,7 +19,7 @@
 - Columns D+ : recognized header → that kind; non-empty unrecognized → `text`; empty header → ignored.
 - Header matching: case-insensitive, accent-insensitive, trimmed.
 - Header aliases (exact, after normalization):
-  - `syllabic`: syllabic, syllabics, syllabique, syllabiques, ᖃᓂᐅᔮᖅᐸᐃᑦ
+  - `syllabic`: syllabaire, syllabaires, syllabic, syllabics, syllabique, syllabiques, ᖃᓂᐅᔮᖅᐸᐃᑦ
   - `audio`: audio, son, sound, pronunciation, prononciation
   - `example`: example, examples, exemple, exemples
   - `notes`: notes, note, remarque, remarques
@@ -69,6 +69,7 @@ Open http://localhost:8000/verify.html (or drive it with Playwright). Pass = the
 window.TESTS.push(function () {
   VERIFY.group('CardExtras');
   const k = CardExtras.kindForHeader;
+  VERIFY.assertEqual('Syllabaire', k('Syllabaire'), 'syllabic');
   VERIFY.assertEqual('Syllabic', k('Syllabic'), 'syllabic');
   VERIFY.assertEqual('SYLLABIQUE', k('SYLLABIQUE'), 'syllabic');
   VERIFY.assertEqual('inuktitut header', k('ᖃᓂᐅᔮᖅᐸᐃᑦ'), 'syllabic');
@@ -157,7 +158,7 @@ window.TESTS.push(function () {
   const phrase = P('Question,Answer,Phrase\nchien,dog,e\n');
   VERIFY.assertEqual('unrecognized C header: example', phrase[0].extras[0].kind, 'example');
   VERIFY.assertEqual('unrecognized C header: label kept', phrase[0].extras[0].label, 'Phrase');
-  const newHdr = P('chien,dog,Syllabic,Audio\nBienvenu,tungngasugit,ᑐᙵᓱᒋᑦ,http://x/t.mp3\n');
+  const newHdr = P('chien,dog,Syllabaire,Audio\nBienvenu,tungngasugit,ᑐᙵᓱᒋᑦ,http://x/t.mp3\n');
   VERIFY.assertEqual('C+ kind name makes row a header', newHdr.length, 1);
   VERIFY.assertEqual('syllabic + audio parsed', newHdr[0].extras.map(e => e.kind).join(), 'syllabic,audio');
   VERIFY.assertEqual('short row under header', P('Mot,Traduction,Syllabic,Audio\nchien,dog\n')[0].extras.length, 0);
@@ -235,7 +236,7 @@ window.TESTS.push(async function () {
   - `x.images`: `<img loading="lazy" class="max-h-40 mx-auto rounded">`; `@error` swaps it for a link.
   - the back face scrolls instead of clipping: `.card-face.back { overflow-y: auto; }` with content aligned to the top when it overflows (`justify-content: safe center` or equivalent). The 600 ms flip transition stays as is.
 - [ ] **Step 3: Card detail view.** Same extras rendering (syllabic, audio, body, images) under the answer, using `CardExtras.layout(card)`.
-- [ ] **Step 4: Settings help.** Replace "Column C is optional — examples appear on the answer side." with: "Optional extra columns, named in the header row: Syllabic, Audio (link), Example, Notes, Image (link). Any other named column is shown as-is. Extras appear on the answer side."
+- [ ] **Step 4: Settings help.** Replace "Column C is optional — examples appear on the answer side." with: "Optional extra columns, named in the header row: Syllabaire, Audio (link), Example, Notes, Image (link). Any other named column is shown as-is. Extras appear on the answer side."
 - [ ] **Step 5: CLAUDE.md.** Update the script order and the Sheets import "Columns:" sentence to describe header-typed extras and `card.extras`.
 - [ ] **Step 6: Verify.** `verify.html` → `N passed, 0 failed`. Then in the app (Playwright or by hand) seed localStorage with a deck and a card whose `extras` hold syllabic `ᑐᙵᓱᒋᑦ`, audio `https://drive.google.com/file/d/x/view`, example, notes, image; start a session and check:
   - syllabics render as glyphs (not boxes) under the answer;

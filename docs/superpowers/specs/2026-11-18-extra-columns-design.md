@@ -40,7 +40,7 @@ whitespace.
 
 | Kind | Headers | Shown as |
 |---|---|---|
-| `syllabic` | syllabic, syllabics, syllabique, syllabiques, ᖃᓂᐅᔮᖅᐸᐃᑦ | large text right under the answer |
+| `syllabic` | syllabaire, syllabaires, syllabic, syllabics, syllabique, syllabiques, ᖃᓂᐅᔮᖅᐸᐃᑦ | large text right under the answer |
 | `audio` | audio, son, sound, pronunciation, prononciation | 🔊 play button next to the syllabics/answer |
 | `example` | example, examples, exemple, exemples | labeled, italic (as today) |
 | `notes` | notes, note, remarque, remarques | labeled text |
