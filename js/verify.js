@@ -298,7 +298,8 @@ window.TESTS.push(function () {
   const plain = SheetsService.parseCsv('hello,world,exfirst\nfoo,blue,exsecond\n');
   VERIFY.assertEqual('plain CSV → 2 cards', plain.length, 2);
   VERIFY.assertEqual('plain CSV → card[0].question', plain[0].question, 'hello');
-  VERIFY.assertEqual('plain CSV → card[1].example', plain[1].example, 'exsecond');
+  VERIFY.assertEqual('plain CSV → card[1] extras', JSON.stringify(plain[1].extras),
+    JSON.stringify([{ kind: 'example', label: 'Example', value: 'exsecond' }]));
 
   // Header row auto-skipped
   const withHeader = SheetsService.parseCsv('Question,Answer,Example\nhello,world,exfirst\n');
@@ -327,7 +328,7 @@ window.TESTS.push(function () {
 
   // Missing third column → example is ''
   const noExample = SheetsService.parseCsv('hello,world\n');
-  VERIFY.assertEqual('missing example column → empty string', noExample[0].example, '');
+  VERIFY.assertEqual('missing example column → no extras', noExample[0].extras.length, 0);
 });
 
 // ---- SheetsService.parseSheetUrl ----
@@ -483,7 +484,7 @@ window.TESTS.push(async function () {
     VERIFY.assertEqual('merges duplicate word → 3 cards', r.cards.length, 3);
     const loup = r.cards.find(c => c.question === 'loup');
     VERIFY.assertEqual('duplicate word is in both categories', loup.categories.join(','), '0,7');
-    VERIFY.assertEqual('duplicate word picks up example', loup.example, 'ex');
+    VERIFY.assertEqual('duplicate word picks up example', loup.extras[0].value, 'ex');
 
     const deckId = '__verify_cat_deck__';
     localStorage.setItem('flashcards_cards', JSON.stringify([]));
@@ -579,4 +580,23 @@ window.TESTS.push(function () {
   VERIFY.assertEqual('layout audio', lay.audio.join(), 'u');
   VERIFY.assertEqual('layout images', lay.images.join(), 'i');
   VERIFY.assertEqual('layout body order', lay.body.map(e => e.value).join(), 'n,g');
+});
+
+// ---- parseCsv backward compatibility ----
+window.TESTS.push(function () {
+  VERIFY.group('parseCsv backward compatibility');
+  const P = t => SheetsService.parseCsv(t);
+  const noHdr = P('chien,dog,ex1,junk\n');
+  VERIFY.assertEqual('no header: C = example, D ignored', JSON.stringify(noHdr[0].extras),
+    JSON.stringify([{ kind: 'example', label: 'Example', value: 'ex1' }]));
+  VERIFY.assertEqual('no header, first word has "a": still dropped (unchanged)', P('chat,cat\nchien,dog\n').length, 1);
+  VERIFY.assertEqual('header Exemple: skipped, C example', P('Question,Answer,Exemple\nchien,dog,e\n')[0].extras[0].kind, 'example');
+  const phrase = P('Question,Answer,Phrase\nchien,dog,e\n');
+  VERIFY.assertEqual('unrecognized C header: example', phrase[0].extras[0].kind, 'example');
+  VERIFY.assertEqual('unrecognized C header: label kept', phrase[0].extras[0].label, 'Phrase');
+  const newHdr = P('chien,dog,Syllabaire,Audio\nBienvenu,tungngasugit,ᑐᙵᓱᒋᑦ,http://x/t.mp3\n');
+  VERIFY.assertEqual('C+ kind name makes row a header', newHdr.length, 1);
+  VERIFY.assertEqual('syllabic + audio parsed', newHdr[0].extras.map(e => e.kind).join(), 'syllabic,audio');
+  VERIFY.assertEqual('short row under header', P('Mot,Traduction,Syllabic,Audio\nchien,dog\n')[0].extras.length, 0);
+  VERIFY.assertEqual('D+ text column shown', P('Question,Answer,Exemple,Genre\nchien,dog,e,m\n')[0].extras[1].label, 'Genre');
 });

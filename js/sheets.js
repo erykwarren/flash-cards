@@ -130,7 +130,7 @@ const SheetsService = {
         const existing = byKey.get(key);
         if (existing) {
           if (!existing.categories.includes(tabs[i].gid)) existing.categories.push(tabs[i].gid);
-          if (!existing.example && card.example) existing.example = card.example;
+          CardExtras.mergeInto(existing.extras, card.extras);
         } else {
           byKey.set(key, { ...card, categories: [tabs[i].gid] });
         }
@@ -195,7 +195,8 @@ const SheetsService = {
   },
 
   /**
-   * Parse a CSV string into [{question, answer, example}].
+   * Parse a CSV string into [{question, answer, extras}].
+   * - Columns C and later become `extras`, typed by the header row (see CardExtras).
    * - Respects double-quoted fields, embedded commas, embedded newlines, and "" escapes.
    * - Accepts \r\n or \n line terminators.
    * - Skips rows where question or answer is blank after trim.
@@ -205,16 +206,18 @@ const SheetsService = {
     const rows = this._splitCsv(text);
     if (rows.length === 0) return [];
 
-    const startIndex = this.isHeaderRow(rows[0]) ? 1 : 0;
+    const header = this.isHeaderRow(rows[0]) ? rows[0] : null;
+    const startIndex = header ? 1 : 0;
+    const width = Math.max(...rows.map(r => r.length));
+    const columns = CardExtras.columnKinds(header, width);
 
     const cards = [];
     for (let i = startIndex; i < rows.length; i++) {
       const row = rows[i];
       const question = (row[0] || '').trim();
       const answer = (row[1] || '').trim();
-      const example = (row[2] || '').trim();
       if (question && answer) {
-        cards.push({ question, answer, example });
+        cards.push({ question, answer, extras: CardExtras.fromRow(row, columns) });
       }
     }
     return cards;
@@ -293,7 +296,7 @@ const SheetsService = {
     const secondCell = (row[1] || '').toLowerCase().trim();
     return headerKeywords.some(kw =>
       firstCell.includes(kw) || secondCell.includes(kw)
-    );
+    ) || row.slice(2).some(c => CardExtras.kindForHeader(c) !== null);
   }
 };
 
