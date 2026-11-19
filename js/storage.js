@@ -183,11 +183,13 @@ const CardStorage = {
     // Check if card already exists
     const existing = cards.find(c => c.id === id);
     if (existing) {
-      // Unarchive if it was archived, and update example if provided
-      if (existing.isArchived || card.example !== existing.example) {
-        return this.update(id, { 
+      // Unarchive if it was archived, and update extras if they changed
+      const extras = card.extras || [];
+      if (existing.isArchived || JSON.stringify(CardExtras.forCard(existing)) !== JSON.stringify(extras)) {
+        return this.update(id, {
           isArchived: false,
-          example: card.example || null
+          extras,
+          example: undefined
         });
       }
       return existing;
@@ -198,7 +200,7 @@ const CardStorage = {
       deckId: card.deckId,
       question: card.question.trim(),
       answer: card.answer.trim(),
-      example: card.example || null,
+      extras: card.extras || [],
       categories: card.categories || [],
       isArchived: false,
       createdAt: new Date().toISOString()
@@ -239,7 +241,7 @@ const CardStorage = {
   /**
    * Bulk create/update cards (for sync)
    * @param {string} deckId - Deck ID
-   * @param {Array} cardData - Array of {question, answer, example} objects
+   * @param {Array} cardData - Array of {question, answer, extras, categories} objects
    * @returns {Promise<{created: number, updated: number, archived: number}>}
    */
   async syncCards(deckId, cardData) {
@@ -258,11 +260,14 @@ const CardStorage = {
         const categories = data.categories || [];
         const categoriesChanged =
           JSON.stringify([...(existing.categories || [])].sort()) !== JSON.stringify([...categories].sort());
-        // Update if archived, or if example or categories changed
-        if (existing.isArchived || existing.example !== (data.example || null) || categoriesChanged) {
+        const extras = data.extras || [];
+        const extrasChanged = JSON.stringify(CardExtras.forCard(existing)) !== JSON.stringify(extras);
+        // Update if archived, or if extras or categories changed
+        if (existing.isArchived || extrasChanged || categoriesChanged) {
           this.update(id, {
             isArchived: false,
-            example: data.example || null,
+            extras,
+            example: undefined, // legacy field, superseded by extras
             categories
           });
           updated++;

@@ -375,9 +375,9 @@ window.TESTS.push(async function () {
 
     // Initial sync: 3 rows
     const initial = [
-      { question: 'q1', answer: 'a1', example: 'e1' },
-      { question: 'q2', answer: 'a2', example: 'e2' },
-      { question: 'q3', answer: 'a3', example: 'e3' }
+      { question: 'q1', answer: 'a1', extras: [{ kind: 'example', label: 'Example', value: 'e1' }] },
+      { question: 'q2', answer: 'a2', extras: [{ kind: 'example', label: 'Example', value: 'e2' }] },
+      { question: 'q3', answer: 'a3', extras: [{ kind: 'example', label: 'Example', value: 'e3' }] }
     ];
     const r1 = await CardStorage.syncCards(deckId, initial);
     VERIFY.assertEqual('initial sync creates 3', r1.created, 3);
@@ -398,7 +398,7 @@ window.TESTS.push(async function () {
     // Re-sync with one row added (q1, q2, q3 still present + q4 new)
     const added = [
       ...initial,
-      { question: 'q4', answer: 'a4', example: '' }
+      { question: 'q4', answer: 'a4', extras: [] }
     ];
     const r2 = await CardStorage.syncCards(deckId, added);
     VERIFY.assertEqual('added row → creates 1', r2.created, 1);
@@ -406,7 +406,7 @@ window.TESTS.push(async function () {
 
     // Re-sync with q2 removed → should archive exactly 1
     const removed = initial.filter(r => r.question !== 'q2').concat([
-      { question: 'q4', answer: 'a4', example: '' }
+      { question: 'q4', answer: 'a4', extras: [] }
     ]);
     const r3 = await CardStorage.syncCards(deckId, removed);
     VERIFY.assertEqual('removed row → archives 1', r3.archived, 1);
@@ -417,7 +417,7 @@ window.TESTS.push(async function () {
 
     // Edit q1's question text → old q1 archived, new card with different id created
     const edited = [
-      { question: 'q1_edited', answer: 'a1', example: 'e1' },
+      { question: 'q1_edited', answer: 'a1', extras: [{ kind: 'example', label: 'Example', value: 'e1' }] },
       ...removed.filter(r => r.question !== 'q1')
     ];
     const oldQ1Id = await generateCardId(deckId, 'q1', 'a1');
@@ -599,4 +599,31 @@ window.TESTS.push(function () {
   VERIFY.assertEqual('syllabic + audio parsed', newHdr[0].extras.map(e => e.kind).join(), 'syllabic,audio');
   VERIFY.assertEqual('short row under header', P('Mot,Traduction,Syllabic,Audio\nchien,dog\n')[0].extras.length, 0);
   VERIFY.assertEqual('D+ text column shown', P('Question,Answer,Exemple,Genre\nchien,dog,e,m\n')[0].extras[1].label, 'Genre');
+});
+
+// ---- syncCards extras ----
+window.TESTS.push(async function () {
+  VERIFY.group('syncCards extras');
+  const original = localStorage.getItem('flashcards_cards');
+  try {
+    const deckId = '__verify_extras__';
+    const id = await generateCardId(deckId, 'chien', 'dog');
+    localStorage.setItem('flashcards_cards', JSON.stringify([
+      { id, deckId, question: 'chien', answer: 'dog', example: 'old', categories: [], isArchived: false }
+    ]));
+    const extras = [{ kind: 'syllabic', label: 'Syllabic', value: 'ᕿᒻᒥᖅ' }];
+    const s = await CardStorage.syncCards(deckId, [{ question: 'chien', answer: 'dog', extras, categories: [] }]);
+    const c = CardStorage.getById(id);
+    VERIFY.assertEqual('legacy card updated, same id', s.updated, 1);
+    VERIFY.assertEqual('extras stored', JSON.stringify(c.extras), JSON.stringify(extras));
+    VERIFY.assertEqual('example key removed', 'example' in c, false);
+    const s2 = await CardStorage.syncCards(deckId, [{ question: 'chien', answer: 'dog', extras, categories: [] }]);
+    VERIFY.assertEqual('unchanged extras → no update', s2.updated, 0);
+    await CardStorage.syncCards(deckId, [{ question: 'loup', answer: 'wolf', extras, categories: [] }]);
+    const w = CardStorage.getById(await generateCardId(deckId, 'loup', 'wolf'));
+    VERIFY.assertEqual('new card gets extras', w.extras[0].value, 'ᕿᒻᒥᖅ');
+  } finally {
+    if (original === null) localStorage.removeItem('flashcards_cards');
+    else localStorage.setItem('flashcards_cards', original);
+  }
 });
