@@ -528,3 +528,53 @@ window.TESTS.push(async function () {
     else localStorage.setItem('flashcards_cards', originalCards);
   }
 });
+
+// ---- CardExtras ----
+window.TESTS.push(function () {
+  VERIFY.group('CardExtras');
+  const k = CardExtras.kindForHeader;
+  VERIFY.assertEqual('Syllabaire', k('Syllabaire'), 'syllabic');
+  VERIFY.assertEqual('Syllabic', k('Syllabic'), 'syllabic');
+  VERIFY.assertEqual('SYLLABIQUE', k('SYLLABIQUE'), 'syllabic');
+  VERIFY.assertEqual('inuktitut header', k('ᖃᓂᐅᔮᖅᐸᐃᑦ'), 'syllabic');
+  VERIFY.assertEqual('padded Exemple', k('  Exemple '), 'example');
+  VERIFY.assertEqual('Prononciation', k('Prononciation'), 'audio');
+  VERIFY.assertEqual('Remarque', k('Remarque'), 'notes');
+  VERIFY.assertEqual('Photo', k('Photo'), 'image');
+  VERIFY.assertEqual('unknown → null', k('Genre'), null);
+  VERIFY.assertEqual('substring is not a match', k('audio file'), null);
+
+  const none = CardExtras.columnKinds(null, 5);
+  VERIFY.assertEqual('no header → C is example', JSON.stringify(none[2]), JSON.stringify({ kind: 'example', label: 'Example' }));
+  VERIFY.assertEqual('no header → D ignored', none[3], null);
+
+  const h = CardExtras.columnKinds(['Français', 'Inuktitut', 'Phrase', 'Audio', 'Genre', ''], 6);
+  VERIFY.assertEqual('unrecognized C → example labeled', JSON.stringify(h[2]), JSON.stringify({ kind: 'example', label: 'Phrase' }));
+  VERIFY.assertEqual('D audio', h[3].kind, 'audio');
+  VERIFY.assertEqual('unknown D+ → text', JSON.stringify(h[4]), JSON.stringify({ kind: 'text', label: 'Genre' }));
+  VERIFY.assertEqual('empty D+ header → ignored', h[5], null);
+  VERIFY.assertEqual('C syllabic when named', CardExtras.columnKinds(['q', 'a', 'Syllabic'], 3)[2].kind, 'syllabic');
+
+  const cols = CardExtras.columnKinds(['q', 'a', 'Syllabic', 'Audio', 'Notes'], 5);
+  const ex = CardExtras.fromRow(['Bienvenu', 'tungngasugit', ' ᑐᙵᓱᒋᑦ ', '   ', 'x'], cols);
+  VERIFY.assertEqual('whitespace-only dropped, trimmed', JSON.stringify(ex),
+    JSON.stringify([{ kind: 'syllabic', label: 'Syllabic', value: 'ᑐᙵᓱᒋᑦ' }, { kind: 'notes', label: 'Notes', value: 'x' }]));
+  VERIFY.assertEqual('short row → no crash', CardExtras.fromRow(['a', 'b'], cols).length, 0);
+
+  VERIFY.assertEqual('legacy example fallback', JSON.stringify(CardExtras.forCard({ example: 'e' })),
+    JSON.stringify([{ kind: 'example', label: 'Example', value: 'e' }]));
+  VERIFY.assertEqual('no extras → []', CardExtras.forCard({ example: null }).length, 0);
+
+  const t = [{ kind: 'notes', label: 'Notes', value: '1' }];
+  CardExtras.mergeInto(t, [{ kind: 'notes', label: 'Notes', value: '2' }, { kind: 'audio', label: 'Audio', value: 'u' }]);
+  VERIFY.assertEqual('merge keeps first, adds missing', t.map(e => e.value).join(','), '1,u');
+
+  const lay = CardExtras.layout({ extras: [
+    { kind: 'image', label: 'Image', value: 'i' }, { kind: 'notes', label: 'Notes', value: 'n' },
+    { kind: 'syllabic', label: 'Syllabic', value: 's' }, { kind: 'audio', label: 'Audio', value: 'u' },
+    { kind: 'text', label: 'Genre', value: 'g' }] });
+  VERIFY.assertEqual('layout syllabic', lay.syllabic.join(), 's');
+  VERIFY.assertEqual('layout audio', lay.audio.join(), 'u');
+  VERIFY.assertEqual('layout images', lay.images.join(), 'i');
+  VERIFY.assertEqual('layout body order', lay.body.map(e => e.value).join(), 'n,g');
+});
