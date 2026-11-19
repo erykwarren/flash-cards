@@ -6,6 +6,23 @@
 console.log(`Flashcards App [${window.APP_VERSION || 'dev'}] - ${window.APP_BUILD_TIME || 'unknown build time'}`);
 
 document.addEventListener('alpine:init', () => {
+  // 🔊 button for an audio extra. Falls back to a plain link when the browser
+  // can't play the URL (e.g. Google Drive share links).
+  Alpine.data('audioButton', (url) => ({
+    url,
+    playing: false,
+    failed: false,
+    play() {
+      if (this.playing) return;
+      const audio = new Audio(this.url);
+      const fail = () => { this.playing = false; this.failed = true; };
+      audio.addEventListener('ended', () => { this.playing = false; });
+      audio.addEventListener('error', fail);
+      this.playing = true;
+      audio.play().catch(fail);
+    }
+  }));
+
 
   /**
    * Main application store

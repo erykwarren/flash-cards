@@ -65,6 +65,19 @@ h1, h2, h3, h4, h5, h6 {
 
 .card-face.back {
   transform: rotateY(180deg);
+  overflow-y: auto;
+  /* Center when it fits, start at the top when extras overflow. */
+  justify-content: safe center;
+  align-items: safe center;
+}
+
+.card-face.back > * {
+  margin: auto 0;
+  width: 100%;
+}
+
+.font-syllabic {
+  font-family: 'Noto Sans Canadian Aboriginal', sans-serif;
 }
 
 /* Glowing accent effect */

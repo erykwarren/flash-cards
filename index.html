@@ -18,7 +18,7 @@
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Outfit:wght@500;600;700&family=Noto+Sans+Canadian+Aboriginal:wght@400;600&display=swap" rel="stylesheet">
   
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -321,12 +321,43 @@
                     <div class="text-center">
                       <p class="text-sm text-text-muted mb-4 uppercase tracking-wider">Answer</p>
                       <p class="text-2xl font-heading font-semibold" x-text="$store.session.currentCard.answer"></p>
-                      <template x-if="$store.session.currentCard.example">
-                        <div class="mt-6 pt-4 border-t border-border/50">
-                          <p class="text-sm text-text-muted mb-2 uppercase tracking-wider">Example</p>
-                          <p class="text-base text-text-primary/80 italic" x-text="$store.session.currentCard.example"></p>
-                        </div>
-                      </template>
+                      <div x-data="{ get x() { return CardExtras.layout($store.session.currentCard) } }">
+                        <template x-for="s in x.syllabic">
+                          <p class="text-2xl font-semibold font-syllabic mt-2" x-text="s"></p>
+                        </template>
+                        <template x-for="g in x.gloss">
+                          <p class="text-sm font-mono text-text-muted mt-1" x-text="g"></p>
+                        </template>
+                        <template x-if="x.audio.length">
+                          <div class="flex justify-center gap-2 mt-3">
+                            <template x-for="u in x.audio">
+                              <span x-data="audioButton(u)">
+                                <button x-show="!failed" type="button" @click.stop="play()" @keydown.space.stop
+                                  class="px-3 py-1 rounded-full border border-border/50 text-lg hover:border-accent transition-colors"
+                                  :class="playing && 'border-accent text-accent'" aria-label="Play pronunciation">🔊</button>
+                                <a x-show="failed" :href="url" target="_blank" rel="noopener" @click.stop
+                                  class="text-sm text-accent underline">🔊 open link</a>
+                              </span>
+                            </template>
+                          </div>
+                        </template>
+                        <template x-if="x.body.length || x.images.length">
+                          <div class="mt-6 pt-4 border-t border-border/50 space-y-3 text-left">
+                            <template x-for="e in x.body">
+                              <div>
+                                <p class="text-xs text-text-muted mb-1 uppercase tracking-wider" x-text="e.label"></p>
+                                <p class="text-base text-text-primary/80 whitespace-pre-line" :class="e.kind === 'example' && 'italic'" x-text="e.value"></p>
+                              </div>
+                            </template>
+                            <template x-for="src in x.images">
+                              <div x-data="{ broken: false }" class="text-center">
+                                <img x-show="!broken" :src="src" loading="lazy" alt="" @error="broken = true" class="max-h-40 mx-auto rounded">
+                                <a x-show="broken" :href="src" target="_blank" rel="noopener" @click.stop class="text-sm text-accent underline">image link</a>
+                              </div>
+                            </template>
+                          </div>
+                        </template>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -465,12 +496,43 @@
               <div class="surface rounded-xl p-6">
                 <p class="text-sm text-text-muted uppercase tracking-wider mb-2">Answer</p>
                 <p class="text-xl font-heading font-semibold" x-text="card.answer"></p>
-                <template x-if="card.example">
-                  <div class="mt-4 pt-4 border-t border-border/50">
-                    <p class="text-sm text-text-muted uppercase tracking-wider mb-2">Example</p>
-                    <p class="text-base text-text-primary/80 italic" x-text="card.example"></p>
-                  </div>
-                </template>
+                <div x-data="{ get x() { return CardExtras.layout(card) } }">
+                        <template x-for="s in x.syllabic">
+                          <p class="text-xl font-semibold font-syllabic mt-2" x-text="s"></p>
+                        </template>
+                        <template x-for="g in x.gloss">
+                          <p class="text-sm font-mono text-text-muted mt-1" x-text="g"></p>
+                        </template>
+                        <template x-if="x.audio.length">
+                          <div class="flex justify-center gap-2 mt-3">
+                            <template x-for="u in x.audio">
+                              <span x-data="audioButton(u)">
+                                <button x-show="!failed" type="button" @click.stop="play()" @keydown.space.stop
+                                  class="px-3 py-1 rounded-full border border-border/50 text-lg hover:border-accent transition-colors"
+                                  :class="playing && 'border-accent text-accent'" aria-label="Play pronunciation">🔊</button>
+                                <a x-show="failed" :href="url" target="_blank" rel="noopener" @click.stop
+                                  class="text-sm text-accent underline">🔊 open link</a>
+                              </span>
+                            </template>
+                          </div>
+                        </template>
+                        <template x-if="x.body.length || x.images.length">
+                          <div class="mt-6 pt-4 border-t border-border/50 space-y-3 text-left">
+                            <template x-for="e in x.body">
+                              <div>
+                                <p class="text-xs text-text-muted mb-1 uppercase tracking-wider" x-text="e.label"></p>
+                                <p class="text-base text-text-primary/80 whitespace-pre-line" :class="e.kind === 'example' && 'italic'" x-text="e.value"></p>
+                              </div>
+                            </template>
+                            <template x-for="src in x.images">
+                              <div x-data="{ broken: false }" class="text-center">
+                                <img x-show="!broken" :src="src" loading="lazy" alt="" @error="broken = true" class="max-h-40 mx-auto rounded">
+                                <a x-show="broken" :href="src" target="_blank" rel="noopener" @click.stop class="text-sm text-accent underline">image link</a>
+                              </div>
+                            </template>
+                          </div>
+                        </template>
+                      </div>
               </div>
               
               <div class="grid grid-cols-2 gap-4">
@@ -769,7 +831,7 @@
                 <div class="text-text-muted/70 italic">Este zapato es de mi tamaño.</div>
               </div>
             </div>
-            <p class="text-xs text-text-muted mt-2">Column C is optional — examples appear on the answer side.</p>
+            <p class="text-xs text-text-muted mt-2">Optional extra columns, named in the header row: Syllabaire, Glose, Audio (link), Example, Notes, Image (link). Any other named column is shown as-is. Extras appear on the answer side.</p>
             <p class="text-xs text-text-muted mt-1">Every tab of the spreadsheet is imported. Use one tab per category (e.g. verbes, animaux) to choose what to practice before each session.</p>
           </div>
 
