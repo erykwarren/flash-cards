@@ -330,9 +330,9 @@
                         </template>
                         <template x-if="x.audio.length">
                           <div class="flex justify-center gap-2 mt-3">
-                            <template x-for="u in x.audio">
+                            <template x-for="(u, i) in x.audio" :key="$store.session.currentCard.id + '|' + i">
                               <span x-data="audioButton(u)">
-                                <button x-show="!failed" type="button" @click.stop="play()" @keydown.space.stop
+                                <button x-show="!failed" type="button" @mousedown.prevent @click.stop="play(); $el.blur()"
                                   class="px-3 py-1 rounded-full border border-border/50 text-lg hover:border-accent transition-colors"
                                   :class="playing && 'border-accent text-accent'" aria-label="Play pronunciation">🔊</button>
                                 <a x-show="failed" :href="url" target="_blank" rel="noopener" @click.stop
@@ -505,9 +505,9 @@
                         </template>
                         <template x-if="x.audio.length">
                           <div class="flex justify-center gap-2 mt-3">
-                            <template x-for="u in x.audio">
+                            <template x-for="(u, i) in x.audio" :key="card.id + '|' + i">
                               <span x-data="audioButton(u)">
-                                <button x-show="!failed" type="button" @click.stop="play()" @keydown.space.stop
+                                <button x-show="!failed" type="button" @mousedown.prevent @click.stop="play(); $el.blur()"
                                   class="px-3 py-1 rounded-full border border-border/50 text-lg hover:border-accent transition-colors"
                                   :class="playing && 'border-accent text-accent'" aria-label="Play pronunciation">🔊</button>
                                 <a x-show="failed" :href="url" target="_blank" rel="noopener" @click.stop

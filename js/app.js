@@ -12,14 +12,24 @@ document.addEventListener('alpine:init', () => {
     url,
     playing: false,
     failed: false,
+    audio: null,
+    timer: null,
     play() {
       if (this.playing) return;
-      const audio = new Audio(this.url);
-      const fail = () => { this.playing = false; this.failed = true; };
-      audio.addEventListener('ended', () => { this.playing = false; });
+      const audio = this.audio = new Audio(this.url);
+      const done = () => { clearTimeout(this.timer); this.playing = false; };
+      const fail = () => { done(); this.failed = true; };
+      audio.addEventListener('playing', () => clearTimeout(this.timer));
+      audio.addEventListener('ended', done);
       audio.addEventListener('error', fail);
+      // A URL that never loads must not leave the button silently stuck.
+      this.timer = setTimeout(fail, 8000);
       this.playing = true;
       audio.play().catch(fail);
+    },
+    destroy() {
+      clearTimeout(this.timer);
+      if (this.audio) this.audio.pause();
     }
   }));
 

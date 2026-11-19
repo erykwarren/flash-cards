@@ -206,8 +206,12 @@ const SheetsService = {
     const rows = this._splitCsv(text);
     if (rows.length === 0) return [];
 
-    const header = this.isHeaderRow(rows[0]) ? rows[0] : null;
-    const startIndex = header ? 1 : 0;
+    const isHeader = this.isHeaderRow(rows[0]);
+    const startIndex = isHeader ? 1 : 0;
+    // Only a real header types the extra columns. A row caught by the legacy
+    // substring rule alone (e.g. "casa,house") is still dropped as before, but
+    // its cells must not become column labels.
+    const header = isHeader && this._isTypedHeader(rows[0]) ? rows[0] : null;
     const width = Math.max(...rows.map(r => r.length));
     const columns = CardExtras.columnKinds(header, width);
 
@@ -289,6 +293,18 @@ const SheetsService = {
   /**
    * Header-row heuristic: matches keywords against the first two cells.
    */
+  /**
+   * True when a header row is trustworthy enough to name columns: A or B is
+   * exactly a header keyword, or some C+ cell exactly names an extra kind.
+   */
+  _isTypedHeader(row) {
+    const keywords = ['question', 'answer', 'front', 'back', 'term', 'definition', 'q', 'a',
+      'mot', 'reponse', 'traduction'];
+    const ab = [row[0], row[1]].map(c => CardExtras.normalizeHeader(c));
+    return ab.some(c => keywords.includes(c)) ||
+      row.slice(2).some(c => CardExtras.kindForHeader(c) !== null);
+  },
+
   isHeaderRow(row) {
     if (!row || row.length === 0) return false;
     const headerKeywords = ['question', 'answer', 'front', 'back', 'term', 'definition', 'q', 'a'];

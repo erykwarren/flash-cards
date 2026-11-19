@@ -627,3 +627,14 @@ window.TESTS.push(async function () {
     else localStorage.setItem('flashcards_cards', original);
   }
 });
+
+// ---- Final review fix: legacy-only header match must not type columns ----
+window.TESTS.push(function () {
+  VERIFY.group('headerless tab misdetected as header (legacy rule)');
+  const r = SheetsService.parseCsv('casa,house,La casa es grande.,irregular\nperro,dog,El perro ladra.,x\n');
+  VERIFY.assertEqual('first row still dropped (unchanged)', r.length, 1);
+  VERIFY.assertEqual('C label stays Example', r[0].extras[0].label, 'Example');
+  VERIFY.assertEqual('D+ still ignored', r[0].extras.length, 1);
+  const typed = SheetsService.parseCsv('Question,Answer,Phrase,Genre\nperro,dog,e,m\n');
+  VERIFY.assertEqual('exact keyword header still types columns', typed[0].extras.map(e => e.label).join(), 'Phrase,Genre');
+});
