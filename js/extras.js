@@ -1,6 +1,6 @@
 /**
  * Card Extras Module
- * Columns C and later of a sheet tab carry optional extras (syllabics, audio,
+ * Columns C and later of a sheet tab carry optional extras (syllabics, gloss, audio,
  * example, notes, image, or any labeled text). The header row names each
  * column's kind; a tab without headers keeps the legacy meaning: C = example.
  *
@@ -12,6 +12,7 @@ const CardExtras = {
   // Header aliases per kind, compared after normalizeHeader().
   KINDS: {
     syllabic: ['syllabaire', 'syllabaires', 'syllabic', 'syllabics', 'syllabique', 'syllabiques', 'ᖃᓂᐅᔮᖅᐸᐃᑦ'],
+    gloss: ['glose', 'gloses', 'gloss', 'glosses'],
     audio: ['audio', 'son', 'sound', 'pronunciation', 'prononciation'],
     example: ['example', 'examples', 'exemple', 'exemples'],
     notes: ['notes', 'note', 'remarque', 'remarques'],
@@ -94,9 +95,10 @@ const CardExtras = {
 
   /** Group a card's extras for display on the answer side. */
   layout(card) {
-    const out = { syllabic: [], audio: [], body: [], images: [] };
+    const out = { syllabic: [], gloss: [], audio: [], body: [], images: [] };
     for (const e of CardExtras.forCard(card)) {
       if (e.kind === 'syllabic') out.syllabic.push(e.value);
+      else if (e.kind === 'gloss') out.gloss.push(e.value);
       else if (e.kind === 'audio') out.audio.push(e.value);
       else if (e.kind === 'image') out.images.push(e.value);
       else out.body.push(e);

@@ -41,6 +41,7 @@ whitespace.
 | Kind | Headers | Shown as |
 |---|---|---|
 | `syllabic` | syllabaire, syllabaires, syllabic, syllabics, syllabique, syllabiques, ᖃᓂᐅᔮᖅᐸᐃᑦ | large text right under the answer |
+| `gloss` | glose, gloses, gloss, glosses | small monospace line under the syllabics (e.g. `ABS.S`) |
 | `audio` | audio, son, sound, pronunciation, prononciation | 🔊 play button next to the syllabics/answer |
 | `example` | example, examples, exemple, exemples | labeled, italic (as today) |
 | `notes` | notes, note, remarque, remarques | labeled text |

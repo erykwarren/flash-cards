@@ -574,6 +574,8 @@ window.TESTS.push(function () {
     { kind: 'syllabic', label: 'Syllabic', value: 's' }, { kind: 'audio', label: 'Audio', value: 'u' },
     { kind: 'text', label: 'Genre', value: 'g' }] });
   VERIFY.assertEqual('layout syllabic', lay.syllabic.join(), 's');
+  VERIFY.assertEqual('Glose header', k('Glose'), 'gloss');
+  VERIFY.assertEqual('layout gloss', CardExtras.layout({ extras: [{ kind: 'gloss', label: 'Glose', value: 'ABS.S' }] }).gloss.join(), 'ABS.S');
   VERIFY.assertEqual('layout audio', lay.audio.join(), 'u');
   VERIFY.assertEqual('layout images', lay.images.join(), 'i');
   VERIFY.assertEqual('layout body order', lay.body.map(e => e.value).join(), 'n,g');

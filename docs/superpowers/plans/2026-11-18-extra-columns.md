@@ -20,6 +20,7 @@
 - Header matching: case-insensitive, accent-insensitive, trimmed.
 - Header aliases (exact, after normalization):
   - `syllabic`: syllabaire, syllabaires, syllabic, syllabics, syllabique, syllabiques, ᖃᓂᐅᔮᖅᐸᐃᑦ
+  - `gloss`: glose, gloses, gloss, glosses
   - `audio`: audio, son, sound, pronunciation, prononciation
   - `example`: example, examples, exemple, exemples
   - `notes`: notes, note, remarque, remarques
@@ -56,12 +57,12 @@ Open http://localhost:8000/verify.html (or drive it with Playwright). Pass = the
 - Produces (global `window.CardExtras`):
   - `KINDS: { syllabic: string[], audio: string[], example: string[], notes: string[], image: string[] }` — the alias lists above.
   - `normalizeHeader(h: string) → string` — `NFD`, strip `\p{M}`, lowercase, trim.
-  - `kindForHeader(h: string) → 'syllabic'|'audio'|'example'|'notes'|'image'|null`
+  - `kindForHeader(h: string) → 'syllabic'|'gloss'|'audio'|'example'|'notes'|'image'|null`
   - `columnKinds(headerRow: string[]|null, width: number) → Array<{kind, label}|null>` indexed by column; indexes 0–1 always `null`. Rules from Global Constraints; label = trimmed original header, or `'Example'` when there is no header / empty C header.
   - `fromRow(row: string[], columns) → Array<{kind, label, value}>` — column order, values trimmed, empty dropped, missing cells treated as empty.
   - `forCard(card) → Array<{kind,label,value}>` — `card.extras` if it's an array; else `[{kind:'example', label:'Example', value: card.example}]` when `card.example` is truthy; else `[]`.
   - `mergeInto(target: Array, more: Array) → Array` — appends entries of `more` whose `kind+'\u0000'+label` isn't already in `target`; returns `target`.
-  - `layout(card) → { syllabic: string[], audio: string[], body: Array<{kind,label,value}>, images: string[] }` — groups `forCard(card)`; `body` holds `example`, `notes`, `text` in order.
+  - `layout(card) → { syllabic: string[], gloss: string[], audio: string[], body: Array<{kind,label,value}>, images: string[] }` — groups `forCard(card)`; `body` holds `example`, `notes`, `text` in order.
 
 - [ ] **Step 1: Write the failing tests** (append to `js/verify.js`)
 
@@ -231,12 +232,12 @@ window.TESTS.push(async function () {
 
 - [ ] **Step 1: Font.** Add `&family=Noto+Sans+Canadian+Aboriginal:wght@400;600` to the Google Fonts URL; add `.font-syllabic { font-family: 'Noto Sans Canadian Aboriginal', sans-serif; }`.
 - [ ] **Step 2: Card back.** Replace the `example` block with markup driven by `x-data="{ x: CardExtras.layout($store.session.currentCard) }"` (re-evaluate when `currentCard` changes, e.g. key the template on `currentCard.id`):
-  - under the answer: each `x.syllabic` value in `text-2xl font-syllabic`; each `x.audio` URL as a 🔊 button with `@click.stop` and local state `{ failed: false, playing: false }`: `play()` does `new Audio(url).play()`; a rejected promise or `error` event sets `failed = true`, which swaps the button for `<a href=url target="_blank" rel="noopener" @click.stop>open link</a>`.
+  - under the answer: each `x.syllabic` value in `text-2xl font-syllabic`; each `x.gloss` value below it in `text-sm font-mono text-text-muted`; each `x.audio` URL as a 🔊 button with `@click.stop` and local state `{ failed: false, playing: false }`: `play()` does `new Audio(url).play()`; a rejected promise or `error` event sets `failed = true`, which swaps the button for `<a href=url target="_blank" rel="noopener" @click.stop>open link</a>`.
   - below a border: `x.body` as `label` (small uppercase muted) + value (`italic` when `kind === 'example'`, `whitespace-pre-line`).
   - `x.images`: `<img loading="lazy" class="max-h-40 mx-auto rounded">`; `@error` swaps it for a link.
   - the back face scrolls instead of clipping: `.card-face.back { overflow-y: auto; }` with content aligned to the top when it overflows (`justify-content: safe center` or equivalent). The 600 ms flip transition stays as is.
 - [ ] **Step 3: Card detail view.** Same extras rendering (syllabic, audio, body, images) under the answer, using `CardExtras.layout(card)`.
-- [ ] **Step 4: Settings help.** Replace "Column C is optional — examples appear on the answer side." with: "Optional extra columns, named in the header row: Syllabaire, Audio (link), Example, Notes, Image (link). Any other named column is shown as-is. Extras appear on the answer side."
+- [ ] **Step 4: Settings help.** Replace "Column C is optional — examples appear on the answer side." with: "Optional extra columns, named in the header row: Syllabaire, Glose, Audio (link), Example, Notes, Image (link). Any other named column is shown as-is. Extras appear on the answer side."
 - [ ] **Step 5: CLAUDE.md.** Update the script order and the Sheets import "Columns:" sentence to describe header-typed extras and `card.extras`.
 - [ ] **Step 6: Verify.** `verify.html` → `N passed, 0 failed`. Then in the app (Playwright or by hand) seed localStorage with a deck and a card whose `extras` hold syllabic `ᑐᙵᓱᒋᑦ`, audio `https://drive.google.com/file/d/x/view`, example, notes, image; start a session and check:
   - syllabics render as glyphs (not boxes) under the answer;
